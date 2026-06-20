@@ -1,0 +1,28 @@
+# Kokoro-FastAPI — natural local voices for ReadFlow.
+#
+# Start it:   docker compose up -d
+# Stop it:    docker compose down
+# Logs:       docker compose logs -f
+#
+# This runs the CPU image, which works on any machine (Apple Silicon included)
+# with no GPU setup. On first start it downloads the model, so give it a minute.
+#
+# GPU alternative (NVIDIA only — not Apple Silicon): swap the `image` line for
+#   image: ghcr.io/remsky/kokoro-fastapi-gpu:latest
+# and add a `deploy.resources.reservations.devices` GPU reservation. On a Mac,
+# stay on the CPU image below.
+
+services:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: readflow-kokoro
+    ports:
+      - "8880:8880"
+    restart: unless-stopped
+    healthcheck:
+      # The /health endpoint is up once the model has finished loading.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8880/health', timeout=5).status==200 else sys.exit(1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s

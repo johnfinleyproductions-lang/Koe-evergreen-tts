@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Read in Koe",
+  "version": "1.0.0",
+  "description": "Highlight text on any web page and read it aloud in the Koe app.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": ["http://127.0.0.1:8765/*"]
+}

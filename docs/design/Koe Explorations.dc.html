@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500;600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Klee+One:wght@400;600&family=Zen+Kurenaido&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#d7d0c2;font-family:'Zen Kaku Gothic New',sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  @keyframes koeWv{0%,100%{transform:scaleY(.32);}50%{transform:scaleY(1);}}
+  @keyframes koePulse{0%,100%{box-shadow:0 2px 5px rgba(120,40,25,.35),0 0 0 0 rgba(192,67,45,0);}50%{box-shadow:0 2px 5px rgba(120,40,25,.35),0 0 0 7px rgba(192,67,45,.10);}}
+</style>
+</helmet>
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:radial-gradient(130% 90% at 50% -10%, #e3dccd 0%, #d4ccba 62%, #cabfa9 100%);">
+  <div style="display:flex;flex-direction:column;gap:54px;">
+
+    <!-- ===================== TITLE / NOTES ===================== -->
+    <div data-screen-label="Cover note" style="position:relative;width:1060px;background:#faf4e8;border:1px solid #e6dabf;border-radius:10px;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(70,55,30,.10),0 22px 46px -22px rgba(70,55,30,.45);padding:30px 36px;">
+      <div style="position:absolute;inset:9px;border:1px dashed #d8c9a6;border-radius:6px;pointer-events:none;"></div>
+      <!-- hanko -->
+      <div style="position:absolute;top:24px;right:34px;width:62px;height:62px;border-radius:50%;border:2.5px solid #c0432d;display:flex;align-items:center;justify-content:center;color:#c0432d;font-family:'Shippori Mincho',serif;font-weight:700;font-size:30px;transform:rotate(-7deg);box-shadow:0 0 0 1px rgba(192,67,45,.25) inset;opacity:.92;">聴</div>
+      <div style="position:relative;display:flex;align-items:flex-end;gap:16px;">
+        <div style="font-family:'Shippori Mincho',serif;font-weight:800;font-size:54px;letter-spacing:.02em;color:#2c2620;line-height:.9;">Koe</div>
+        <div style="font-family:'Shippori Mincho',serif;font-size:30px;color:#c0432d;line-height:1;padding-bottom:4px;">声</div>
+        <div style="font-family:'Zen Kaku Gothic New';font-size:13px;letter-spacing:.06em;color:#8c8472;padding-bottom:7px;">listen-reading desk · 聴く読書</div>
+      </div>
+      <div style="margin-top:14px;max-width:760px;font-family:'Shippori Mincho',serif;font-size:16px;line-height:1.75;color:#4a4236;">Hear anything instantly in a natural voice, then keep your hands and eyes free to think on paper. A floating player that pops up anywhere — fused with a warm, tactile notebook for catching ideas as you listen.</div>
+      <div style="margin-top:18px;display:flex;gap:26px;flex-wrap:wrap;font-family:'Zen Kaku Gothic New';font-size:12.5px;line-height:1.6;color:#6f6557;">
+        <div style="max-width:300px;"><span style="color:#c0432d;font-weight:700;">Direction</span><br>Japanese stationery — kinari paper, sumi ink, washi tape, a vermilion hanko. Calm, hand-made, player-first.</div>
+        <div style="max-width:300px;"><span style="color:#c0432d;font-weight:700;">On the board</span><br>The kit, then 3 floating-player treatments, 2 listen-&-annotate reading views, and the idea canvas.</div>
+        <div style="max-width:300px;"><span style="color:#c0432d;font-weight:700;">How to use it</span><br>These are atoms to mix &amp; match — pick a player + a reading view + the canvas, and I'll build the chosen flow.</div>
+      </div>
+    </div>
+
+    <!-- ===================== THE KIT ===================== -->
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <div style="display:flex;align-items:baseline;gap:13px;">
+        <span style="width:18px;height:3px;background:#c0432d;border-radius:2px;display:inline-block;transform:translateY(-4px);"></span>
+        <h2 style="margin:0;font:700 18px 'Zen Kaku Gothic New';color:#2c2620;letter-spacing:.03em;">The kit</h2>
+        <span style="font:400 14px 'Shippori Mincho';color:#8c8472;">道具 · palette &amp; type</span>
+      </div>
+      <div style="display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap;">
+        <!-- swatches -->
+        <div style="display:flex;gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:center;width:74px;">
+            <div style="width:74px;height:58px;border-radius:7px;background:#2c2620;box-shadow:0 2px 5px rgba(70,55,30,.25);"></div>
+            <div style="text-align:center;font-family:'Zen Kaku Gothic New';font-size:11px;color:#6f6557;"><b style="color:#2c2620;">墨 Sumi</b><br><span style="font-family:'DM Mono';font-size:10px;color:#a99f8c;">#2C2620</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:center;width:74px;">
+            <div style="width:74px;height:58px;border-radius:7px;background:#c0432d;box-shadow:0 2px 5px rgba(70,55,30,.25);"></div>
+            <div style="text-align:center;font-family:'Zen Kaku Gothic New';font-size:11px;color:#6f6557;"><b style="color:#2c2620;">朱 Shu</b><br><span style="font-family:'DM Mono';font-size:10px;color:#a99f8c;">#C0432D</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:center;width:74px;">
+            <div style="width:74px;height:58px;border-radius:7px;background:#33455f;box-shadow:0 2px 5px rgba(70,55,30,.25);"></div>
+            <div style="text-align:center;font-family:'Zen Kaku Gothic New';font-size:11px;color:#6f6557;"><b style="color:#2c2620;">藍 Ai</b><br><span style="font-family:'DM Mono';font-size:10px;color:#a99f8c;">#33455F</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:center;width:74px;">
+            <div style="width:74px;height:58px;border-radius:7px;background:#7c8a5b;box-shadow:0 2px 5px rgba(70,55,30,.25);"></div>
+            <div style="text-align:center;font-family:'Zen Kaku Gothic New';font-size:11px;color:#6f6557;"><b style="color:#2c2620;">抹茶 Matcha</b><br><span style="font-family:'DM Mono';font-size:10px;color:#a99f8c;">#7C8A5B</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:center;width:74px;">
+            <div style="width:74px;height:58px;border-radius:7px;background:#cf9b4a;box-shadow:0 2px 5px rgba(70,55,30,.25);"></div>
+            <div style="text-align:center;font-family:'Zen Kaku Gothic New';font-size:11px;color:#6f6557;"><b style="color:#2c2620;">黄土 Ochre</b><br><span style="font-family:'DM Mono';font-size:10px;color:#a99f8c;">#CF9B4A</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:center;width:74px;">
+            <div style="width:74px;height:58px;border-radius:7px;background:#f4ecdd;border:1px solid #e2d6bb;box-shadow:0 2px 5px rgba(70,55,30,.25);"></div>
+            <div style="text-align:center;font-family:'Zen Kaku Gothic New';font-size:11px;color:#6f6557;"><b style="color:#2c2620;">生成 Kinari</b><br><span style="font-family:'DM Mono';font-size:10px;color:#a99f8c;">#F4ECDD</span></div>
+          </div>
+        </div>
+        <!-- type -->
+        <div style="display:flex;flex-direction:column;gap:9px;padding-left:30px;border-left:1px solid #c9bfa9;">
+          <div style="font-family:'Shippori Mincho',serif;font-size:21px;color:#2c2620;">Shippori Mincho <span style="font-size:12px;color:#a99f8c;font-family:'Zen Kaku Gothic New';">— reading body</span></div>
+          <div style="font-family:'Zen Kaku Gothic New';font-weight:700;font-size:18px;color:#2c2620;">Zen Kaku Gothic <span style="font-size:12px;color:#a99f8c;font-weight:400;">— interface</span></div>
+          <div style="font-family:'Klee One',cursive;font-size:19px;color:#33455f;">Klee One — handwritten notes <span style="font-size:12px;color:#a99f8c;font-family:'Zen Kaku Gothic New';"></span></div>
+          <div style="font-family:'DM Mono',monospace;font-size:15px;color:#6f6557;letter-spacing:.02em;">DM Mono — 1:12 / 3:40 · 1.0×</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== SECTION 1 — PLAYERS ===================== -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+      <div style="display:flex;align-items:baseline;gap:13px;">
+        <span style="width:18px;height:3px;background:#c0432d;border-radius:2px;display:inline-block;transform:translateY(-4px);"></span>
+        <h2 style="margin:0;font:700 18px 'Zen Kaku Gothic New';color:#2c2620;letter-spacing:.03em;">① The floating player</h2>
+        <span style="font:400 14px 'Shippori Mincho';color:#8c8472;">浮遊プレイヤー · pops up anywhere — three treatments</span>
+      </div>
+      <div style="display:flex;gap:48px;align-items:flex-start;">
+
+        <!-- ---------- Player A: Library card ---------- -->
+        <div style="display:flex;flex-direction:column;gap:11px;flex:none;width:392px;">
+          <span style="font:600 11px/1 'Zen Kaku Gothic New';letter-spacing:.17em;text-transform:uppercase;color:#8c8472;">A · Library card</span>
+          <div data-screen-label="Player A — Library card" style="position:relative;width:392px;background:#faf4e8;border:1px solid #e7dcc1;border-radius:9px;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(70,55,30,.10),0 20px 40px -20px rgba(70,55,30,.45);padding:22px 24px 20px;">
+            <!-- washi tape -->
+            <div style="position:absolute;top:-11px;left:42px;width:96px;height:26px;transform:rotate(-4deg);background:repeating-linear-gradient(46deg,rgba(124,138,91,.46) 0 7px,rgba(124,138,91,.30) 7px 14px);box-shadow:0 1px 3px rgba(70,55,30,.18);opacity:.92;"></div>
+            <!-- vermilion margin line -->
+            <div style="position:absolute;top:18px;bottom:18px;left:46px;width:1.5px;background:rgba(192,67,45,.45);"></div>
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;padding-left:30px;">
+              <span style="font-family:'Shippori Mincho',serif;color:#c0432d;font-size:16px;">読</span>
+              <span style="font:600 10.5px 'Zen Kaku Gothic New';letter-spacing:.14em;text-transform:uppercase;color:#a3361f;">Now reading</span>
+              <span style="font-family:'Shippori Mincho',serif;font-size:13px;color:#8c8472;margin-left:auto;">The Quiet Hour</span>
+            </div>
+            <!-- text preview, ruled -->
+            <div style="padding-left:30px;font-family:'Shippori Mincho',serif;font-size:16.5px;line-height:28px;color:#3f382d;background:repeating-linear-gradient(to bottom,transparent 0 27px,rgba(60,95,150,.14) 27px 28px);">
+              The quietest hour of the morning belongs to <span style="background:rgba(192,67,45,.20);border-radius:3px;padding:0 2px;font-weight:600;color:#2c2620;box-decoration-break:clone;-webkit-box-decoration-break:clone;">no&nbsp;one</span>. Before the inbox wakes, there is a narrow window where attention is still whole.
+            </div>
+            <!-- divider -->
+            <div style="height:1px;background:#e6dabf;margin:16px 0 14px;"></div>
+            <!-- controls -->
+            <div style="display:flex;align-items:center;gap:12px;">
+              <button style="all:unset;cursor:pointer;width:40px;height:40px;border-radius:50%;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(70,55,30,.14);">
+                <svg width="16" height="16" viewBox="0 0 16 16"><path d="M5 3v10M13 3 7 8l6 5z" fill="#2c2620"/></svg>
+              </button>
+              <button style="all:unset;cursor:pointer;width:56px;height:56px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;animation:koePulse 2.4s ease-in-out infinite;border:2px solid #faf4e8;box-shadow:0 2px 5px rgba(120,40,25,.35);">
+                <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg>
+              </button>
+              <button style="all:unset;cursor:pointer;width:40px;height:40px;border-radius:50%;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(70,55,30,.14);">
+                <svg width="16" height="16" viewBox="0 0 16 16"><path d="M11 3v10M3 3l6 5-6 5z" fill="#2c2620"/></svg>
+              </button>
+              <div style="margin-left:auto;display:flex;gap:8px;">
+                <span style="font:500 12px 'DM Mono';color:#4a4236;border:1px solid #e0d4b8;border-radius:20px;padding:5px 10px;background:#f4ecdd;">1.0×</span>
+                <span style="display:flex;align-items:center;gap:6px;font:400 12px 'Zen Kaku Gothic New';color:#4a4236;border:1px solid #e0d4b8;border-radius:20px;padding:5px 10px;background:#f4ecdd;"><span style="width:8px;height:8px;border-radius:50%;background:#7c8a5b;"></span>Haru</span>
+              </div>
+            </div>
+            <!-- progress -->
+            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
+              <span style="font:500 11px 'DM Mono';color:#8c8472;">1:12</span>
+              <div style="flex:1;height:4px;border-radius:3px;background:#e6dabf;position:relative;">
+                <div style="position:absolute;left:0;top:0;bottom:0;width:34%;background:#c0432d;border-radius:3px;"></div>
+                <div style="position:absolute;left:34%;top:50%;width:11px;height:11px;border-radius:50%;background:#c0432d;border:2px solid #faf4e8;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(120,40,25,.4);"></div>
+              </div>
+              <span style="font:500 11px 'DM Mono';color:#8c8472;">3:40</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- Player B: Menu-bar pill ---------- -->
+        <div style="display:flex;flex-direction:column;gap:11px;flex:none;width:392px;">
+          <span style="font:600 11px/1 'Zen Kaku Gothic New';letter-spacing:.17em;text-transform:uppercase;color:#8c8472;">B · Menu-bar pill</span>
+          <div data-screen-label="Player B — Menu-bar pill" style="position:relative;width:392px;height:226px;border-radius:9px;overflow:hidden;border:1px solid #e7dcc1;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(70,55,30,.10),0 20px 40px -20px rgba(70,55,30,.45);background:linear-gradient(150deg,#cdd2c0 0%,#dcd9c6 45%,#cbd0c2 100%);">
+            <!-- faux desktop / window behind -->
+            <div style="position:absolute;top:18px;left:20px;right:20px;height:120px;border-radius:7px;background:rgba(250,244,232,.5);border:1px solid rgba(255,255,255,.45);box-shadow:0 6px 18px -8px rgba(60,50,30,.3);"></div>
+            <div style="position:absolute;top:30px;left:34px;width:120px;height:7px;border-radius:4px;background:rgba(70,60,40,.16);"></div>
+            <div style="position:absolute;top:48px;left:34px;width:300px;height:6px;border-radius:4px;background:rgba(70,60,40,.10);"></div>
+            <div style="position:absolute;top:62px;left:34px;width:280px;height:6px;border-radius:4px;background:rgba(70,60,40,.10);"></div>
+            <div style="position:absolute;top:76px;left:34px;width:250px;height:6px;border-radius:4px;background:rgba(70,60,40,.10);"></div>
+            <span style="position:absolute;top:24px;right:30px;font:500 10px 'Zen Kaku Gothic New';letter-spacing:.12em;text-transform:uppercase;color:rgba(70,60,40,.4);">⌥ Space</span>
+            <!-- floating pill -->
+            <div style="position:absolute;left:24px;right:24px;bottom:30px;height:62px;border-radius:34px;background:#fdf9f1;box-shadow:0 1px 0 #fff inset,0 10px 26px -8px rgba(60,45,25,.5),0 2px 6px rgba(60,45,25,.2);display:flex;align-items:center;gap:13px;padding:0 16px 0 9px;">
+              <div style="width:46px;height:46px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;flex:none;border:2px solid #fdf9f1;box-shadow:0 2px 5px rgba(120,40,25,.35);">
+                <svg width="17" height="17" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#fdf9f1"/></svg>
+              </div>
+              <!-- waveform -->
+              <div style="display:flex;align-items:center;gap:2.5px;height:30px;flex:none;">
+                <span style="width:3px;height:60%;border-radius:2px;background:#c0432d;transform-origin:center;animation:koeWv 1s ease-in-out infinite;"></span>
+                <span style="width:3px;height:90%;border-radius:2px;background:#c0432d;transform-origin:center;animation:koeWv 1s ease-in-out infinite .12s;"></span>
+                <span style="width:3px;height:45%;border-radius:2px;background:#c0432d;transform-origin:center;animation:koeWv 1s ease-in-out infinite .24s;"></span>
+                <span style="width:3px;height:75%;border-radius:2px;background:#d98c7a;transform-origin:center;animation:koeWv 1s ease-in-out infinite .36s;"></span>
+                <span style="width:3px;height:55%;border-radius:2px;background:#e3c2b3;transform-origin:center;animation:koeWv 1s ease-in-out infinite .48s;"></span>
+                <span style="width:3px;height:40%;border-radius:2px;background:#e3c2b3;"></span>
+                <span style="width:3px;height:65%;border-radius:2px;background:#e6dabf;"></span>
+                <span style="width:3px;height:50%;border-radius:2px;background:#e6dabf;"></span>
+                <span style="width:3px;height:80%;border-radius:2px;background:#e6dabf;"></span>
+                <span style="width:3px;height:38%;border-radius:2px;background:#e6dabf;"></span>
+              </div>
+              <span style="font:500 12px 'DM Mono';color:#6f6557;flex:none;">0:42</span>
+              <span style="width:1px;height:24px;background:#e6dabf;flex:none;"></span>
+              <span style="font:500 12px 'DM Mono';color:#4a4236;flex:none;">1.2×</span>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex:none;">
+                <span style="width:24px;height:24px;border-radius:50%;background:#33455f;color:#faf4e8;display:flex;align-items:center;justify-content:center;font:600 11px 'Zen Kaku Gothic New';">春</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- Player C: Field recorder ---------- -->
+        <div style="display:flex;flex-direction:column;gap:11px;flex:none;width:392px;">
+          <span style="font:600 11px/1 'Zen Kaku Gothic New';letter-spacing:.17em;text-transform:uppercase;color:#8c8472;">C · Field recorder</span>
+          <div data-screen-label="Player C — Field recorder" style="position:relative;width:392px;background:linear-gradient(155deg,#e7dcc1,#ddd0b1);border:1px solid #d2c4a3;border-radius:14px;box-shadow:0 1px 0 rgba(255,255,255,.6) inset,0 2px 4px rgba(70,55,30,.12),0 20px 40px -20px rgba(70,55,30,.5);padding:18px;">
+            <!-- inset screen -->
+            <div style="border-radius:9px;background:#f5ecd8;box-shadow:0 2px 6px rgba(70,55,30,.18) inset,0 0 0 1px rgba(120,100,60,.12) inset;padding:15px 16px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
+                <span style="width:8px;height:8px;border-radius:50%;background:#c0432d;box-shadow:0 0 6px rgba(192,67,45,.6);"></span>
+                <span style="font:600 9.5px 'Zen Kaku Gothic New';letter-spacing:.16em;text-transform:uppercase;color:#a3361f;">Hearing</span>
+                <span style="font:500 11px 'DM Mono';color:#8c8472;margin-left:auto;">SENT. 03 / 18</span>
+              </div>
+              <!-- waveform line -->
+              <div style="display:flex;align-items:center;gap:2px;height:26px;margin-bottom:11px;">
+                <span style="width:2.5px;height:30%;background:#c0432d;border-radius:2px;"></span><span style="width:2.5px;height:55%;background:#c0432d;border-radius:2px;"></span><span style="width:2.5px;height:80%;background:#c0432d;border-radius:2px;"></span><span style="width:2.5px;height:45%;background:#c0432d;border-radius:2px;"></span><span style="width:2.5px;height:65%;background:#c0432d;border-radius:2px;"></span><span style="width:2.5px;height:35%;background:#c0432d;border-radius:2px;"></span><span style="width:2.5px;height:70%;background:#d98c7a;border-radius:2px;"></span><span style="width:2.5px;height:50%;background:#d98c7a;border-radius:2px;"></span><span style="width:2.5px;height:85%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:40%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:60%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:30%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:72%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:48%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:66%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:38%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:55%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:78%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:42%;background:#e6dabf;border-radius:2px;"></span><span style="width:2.5px;height:62%;background:#e6dabf;border-radius:2px;"></span>
+              </div>
+              <div style="font-family:'Shippori Mincho',serif;font-size:15px;line-height:1.55;color:#3f382d;">…there is a <span style="background:rgba(192,67,45,.20);border-radius:3px;padding:0 2px;font-weight:600;color:#2c2620;">narrow</span> window where attention is still whole.</div>
+              <div style="display:flex;justify-content:space-between;margin-top:11px;font:500 11px 'DM Mono';color:#8c8472;"><span>1:12</span><span>−2:28</span></div>
+            </div>
+            <!-- transport -->
+            <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;">
+              <button style="all:unset;cursor:pointer;width:44px;height:44px;border-radius:11px;background:#f4ecdd;border:1px solid #d8c9a6;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #cfc0a0;">
+                <svg width="17" height="17" viewBox="0 0 16 16"><path d="M5 3v10M13 3 7 8l6 5z" fill="#2c2620"/></svg>
+              </button>
+              <button style="all:unset;cursor:pointer;width:58px;height:58px;border-radius:14px;background:#c0432d;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 #8f2f1d;border:1px solid #a3361f;">
+                <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg>
+              </button>
+              <button style="all:unset;cursor:pointer;width:44px;height:44px;border-radius:11px;background:#f4ecdd;border:1px solid #d8c9a6;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #cfc0a0;">
+                <svg width="17" height="17" viewBox="0 0 16 16"><path d="M11 3v10M3 3l6 5-6 5z" fill="#2c2620"/></svg>
+              </button>
+              <div style="width:1px;height:38px;background:#cfc0a0;margin:0 2px;"></div>
+              <button style="all:unset;cursor:pointer;width:44px;height:44px;border-radius:11px;background:#f4ecdd;border:1px solid #d8c9a6;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 0 #cfc0a0;font-family:'DM Mono';font-size:11px;font-weight:500;color:#2c2620;line-height:1;">1.0<span style="font-size:8px;">SPD</span></button>
+              <button style="all:unset;cursor:pointer;height:44px;padding:0 12px;border-radius:11px;background:#f4ecdd;border:1px solid #d8c9a6;display:flex;align-items:center;gap:6px;box-shadow:0 2px 0 #cfc0a0;font-family:'Zen Kaku Gothic New';font-size:12px;color:#2c2620;"><span style="width:8px;height:8px;border-radius:50%;background:#7c8a5b;"></span>Haru</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================== SECTION 2 — READING ===================== -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+      <div style="display:flex;align-items:baseline;gap:13px;">
+        <span style="width:18px;height:3px;background:#c0432d;border-radius:2px;display:inline-block;transform:translateY(-4px);"></span>
+        <h2 style="margin:0;font:700 18px 'Zen Kaku Gothic New';color:#2c2620;letter-spacing:.03em;">② Listen &amp; annotate</h2>
+        <span style="font:400 14px 'Shippori Mincho';color:#8c8472;">傾聴 · word-synced highlight + margin notes</span>
+      </div>
+      <div style="display:flex;gap:48px;align-items:flex-start;">
+
+        <!-- ---------- Reading A: Margin notebook ---------- -->
+        <div style="display:flex;flex-direction:column;gap:11px;flex:none;width:600px;">
+          <span style="font:600 11px/1 'Zen Kaku Gothic New';letter-spacing:.17em;text-transform:uppercase;color:#8c8472;">A · Margin notebook</span>
+          <div data-screen-label="Reading A — Margin notebook" style="position:relative;width:600px;background:#faf4e8;border:1px solid #e7dcc1;border-radius:9px;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(70,55,30,.10),0 20px 40px -20px rgba(70,55,30,.45);overflow:hidden;">
+            <!-- top bar -->
+            <div style="display:flex;align-items:center;gap:12px;padding:15px 22px;border-bottom:1px solid #ece0c6;background:#f6eedd;">
+              <span style="font-family:'Shippori Mincho',serif;font-weight:700;font-size:17px;color:#2c2620;">The Quiet Hour</span>
+              <span style="font-family:'Shippori Mincho',serif;font-size:12.5px;color:#a99f8c;">essay · 3:40</span>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+                <div style="width:34px;height:34px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;border:2px solid #faf4e8;box-shadow:0 2px 4px rgba(120,40,25,.3);">
+                  <svg width="14" height="14" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg>
+                </div>
+                <span style="font:500 11px 'DM Mono';color:#4a4236;border:1px solid #e0d4b8;border-radius:20px;padding:4px 9px;background:#f4ecdd;">1.0×</span>
+                <span style="font:500 11px 'DM Mono';color:#8c8472;">1:12 / 3:40</span>
+              </div>
+            </div>
+            <!-- body -->
+            <div style="position:relative;padding:24px 26px 24px 30px;background:repeating-linear-gradient(to bottom,transparent 0 31px,rgba(60,95,150,.10) 31px 32px);background-position:0 24px;">
+              <!-- progress dot in margin -->
+              <div style="position:absolute;left:12px;top:92px;width:9px;height:9px;border-radius:50%;background:#c0432d;box-shadow:0 0 0 3px rgba(192,67,45,.15);"></div>
+              <div style="font-family:'Shippori Mincho',serif;font-size:17px;line-height:32px;color:#6f6557;max-width:400px;">
+                <span style="color:#a99f8c;">The quietest hour of the morning belongs to no one.</span><br>
+                <span style="color:#2c2620;">Before the inbox wakes, before the first notification, there is a </span><span style="background:rgba(192,67,45,.20);border-radius:3px;padding:0 2px;font-weight:600;color:#2c2620;">narrow</span><span style="color:#2c2620;"> window where attention is still whole — unbroken, unspent.</span><br>
+                <span style="color:#b3a892;">To read slowly, then, is a small act of resistance.</span>
+              </div>
+              <!-- margin notes -->
+              <div style="position:absolute;right:18px;top:74px;width:150px;font-family:'Klee One',cursive;font-size:14px;line-height:1.4;color:#33455f;transform:rotate(-1.5deg);">
+                ← the “narrow window” = my best writing time
+              </div>
+              <div style="position:absolute;right:24px;top:150px;width:140px;font-family:'Klee One',cursive;font-size:14px;line-height:1.4;color:#7c8a5b;transform:rotate(1deg);">
+                try: no inbox till 10am ✎
+              </div>
+              <!-- connector -->
+              <svg style="position:absolute;right:168px;top:96px;" width="40" height="30" viewBox="0 0 40 30"><path d="M2 24 C18 22 26 12 38 6" stroke="#c9bca0" stroke-width="1.4" fill="none" stroke-dasharray="3 3"/></svg>
+            </div>
+            <!-- bottom nav -->
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 22px;border-top:1px solid #ece0c6;background:#f6eedd;">
+              <button style="all:unset;cursor:pointer;display:flex;align-items:center;gap:6px;font:500 12px 'Zen Kaku Gothic New';color:#6f6557;"><svg width="13" height="13" viewBox="0 0 16 16"><path d="M11 3v10M3 3l6 5-6 5z" fill="#8c8472" transform="scale(-1,1) translate(-16,0)"/></svg> prev sentence</button>
+              <div style="flex:1;height:3px;border-radius:2px;background:#e6dabf;position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:34%;background:#c0432d;border-radius:2px;"></div></div>
+              <button style="all:unset;cursor:pointer;display:flex;align-items:center;gap:6px;font:500 12px 'Zen Kaku Gothic New';color:#6f6557;">next sentence <svg width="13" height="13" viewBox="0 0 16 16"><path d="M11 3v10M3 3l6 5-6 5z" fill="#8c8472"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- Reading B: Focus / lamp ---------- -->
+        <div style="display:flex;flex-direction:column;gap:11px;flex:none;width:600px;">
+          <span style="font:600 11px/1 'Zen Kaku Gothic New';letter-spacing:.17em;text-transform:uppercase;color:#8c8472;">B · Focus mode (lamp-lit)</span>
+          <div data-screen-label="Reading B — Focus mode" style="position:relative;width:600px;height:362px;border-radius:9px;overflow:hidden;border:1px solid #1f1b16;box-shadow:0 2px 4px rgba(70,55,30,.2),0 20px 40px -20px rgba(40,30,15,.6);background:radial-gradient(120% 80% at 50% 38%,#3a3328 0%,#2b2620 55%,#211d18 100%);">
+            <span style="position:absolute;top:16px;left:20px;font:600 10px 'Zen Kaku Gothic New';letter-spacing:.18em;text-transform:uppercase;color:#8a7d68;">Focus · 集中</span>
+            <span style="position:absolute;top:16px;right:20px;font-family:'Shippori Mincho',serif;font-size:13px;color:#8a7d68;">The Quiet Hour</span>
+            <!-- text -->
+            <div style="position:absolute;left:48px;right:48px;top:74px;font-family:'Shippori Mincho',serif;text-align:center;">
+              <div style="font-size:15px;line-height:1.6;color:#6a6053;margin-bottom:18px;">The quietest hour of the morning belongs to no one.</div>
+              <div style="font-size:24px;line-height:1.6;color:#f4ecdd;font-weight:500;">Before the inbox wakes, there is a <span style="background:rgba(192,67,45,.32);border-radius:4px;padding:1px 5px;color:#ffe9df;">narrow</span> window where attention is still whole.</div>
+              <div style="font-size:15px;line-height:1.6;color:#6a6053;margin-top:18px;">To read slowly, then, is a small act of resistance.</div>
+            </div>
+            <!-- floating control bar -->
+            <div style="position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:13px;background:#faf4e8;border-radius:30px;padding:8px 16px 8px 9px;box-shadow:0 10px 26px -8px rgba(0,0,0,.55);">
+              <div style="width:42px;height:42px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;border:2px solid #faf4e8;box-shadow:0 2px 5px rgba(120,40,25,.4);">
+                <svg width="16" height="16" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:2.5px;height:24px;">
+                <span style="width:3px;height:50%;border-radius:2px;background:#c0432d;animation:koeWv 1s ease-in-out infinite;"></span>
+                <span style="width:3px;height:85%;border-radius:2px;background:#c0432d;animation:koeWv 1s ease-in-out infinite .12s;"></span>
+                <span style="width:3px;height:60%;border-radius:2px;background:#c0432d;animation:koeWv 1s ease-in-out infinite .24s;"></span>
+                <span style="width:3px;height:75%;border-radius:2px;background:#d98c7a;animation:koeWv 1s ease-in-out infinite .36s;"></span>
+                <span style="width:3px;height:45%;border-radius:2px;background:#e6dabf;"></span>
+                <span style="width:3px;height:65%;border-radius:2px;background:#e6dabf;"></span>
+                <span style="width:3px;height:40%;border-radius:2px;background:#e6dabf;"></span>
+              </div>
+              <span style="font:500 12px 'DM Mono';color:#6f6557;">1:12</span>
+              <span style="width:1px;height:22px;background:#e6dabf;"></span>
+              <span style="font:500 12px 'DM Mono';color:#4a4236;">1.0×</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================== SECTION 3 — CANVAS ===================== -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+      <div style="display:flex;align-items:baseline;gap:13px;">
+        <span style="width:18px;height:3px;background:#c0432d;border-radius:2px;display:inline-block;transform:translateY(-4px);"></span>
+        <h2 style="margin:0;font:700 18px 'Zen Kaku Gothic New';color:#2c2620;letter-spacing:.03em;">③ The idea canvas</h2>
+        <span style="font:400 14px 'Shippori Mincho';color:#8c8472;">発想 · arrange ideas while you listen — sticky notes, clips, mind-map</span>
+      </div>
+      <div style="display:flex;gap:48px;align-items:flex-start;">
+        <div style="display:flex;flex-direction:column;gap:11px;flex:none;width:880px;">
+          <span style="font:600 11px/1 'Zen Kaku Gothic New';letter-spacing:.17em;text-transform:uppercase;color:#8c8472;">Freeform board</span>
+          <div data-screen-label="Idea canvas" style="position:relative;width:880px;height:560px;border-radius:9px;overflow:hidden;border:1px solid #e1d4b6;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(70,55,30,.1),0 22px 46px -22px rgba(70,55,30,.5);background:#f1e8d6;background-image:radial-gradient(circle at 1px 1px, rgba(75,60,35,.13) 1px, transparent 0);background-size:24px 24px;">
+
+            <!-- connectors layer -->
+            <svg style="position:absolute;inset:0;" width="880" height="560" viewBox="0 0 880 560">
+              <path d="M392 118 C300 130 250 160 220 196" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+              <path d="M468 110 C560 110 620 112 668 120" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+              <path d="M386 150 C320 240 260 320 248 360" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+              <path d="M470 138 C540 200 560 250 580 270" stroke="#c4b693" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+              <circle cx="392" cy="118" r="3" fill="#c4b693"/><circle cx="468" cy="110" r="3" fill="#c4b693"/>
+            </svg>
+
+            <!-- toolbar -->
+            <div style="position:absolute;left:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;background:#faf4e8;border:1px solid #e0d4b8;border-radius:13px;padding:8px;box-shadow:0 6px 16px -8px rgba(70,55,30,.4);">
+              <div style="width:36px;height:36px;border-radius:9px;background:#2c2620;display:flex;align-items:center;justify-content:center;color:#faf4e8;font-size:15px;">✎</div>
+              <div style="width:36px;height:36px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-size:15px;">▢</div>
+              <div style="width:36px;height:36px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-size:14px;">✂</div>
+              <div style="width:36px;height:36px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-family:'Shippori Mincho';font-size:15px;">字</div>
+              <div style="width:36px;height:36px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-size:16px;">⌗</div>
+              <div style="height:1px;background:#e6dabf;margin:1px 4px;"></div>
+              <div style="width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;"><span style="width:18px;height:18px;border-radius:50%;background:#c0432d;border:2px solid #faf4e8;box-shadow:0 0 0 1px #e0d4b8;"></span></div>
+            </div>
+
+            <!-- topic node -->
+            <div style="position:absolute;left:300px;top:84px;width:158px;display:flex;align-items:center;gap:10px;background:#faf4e8;border:1.5px solid #2c2620;border-radius:11px;padding:12px 14px;box-shadow:0 6px 16px -8px rgba(70,55,30,.5);">
+              <div style="width:34px;height:34px;border-radius:50%;border:2px solid #c0432d;color:#c0432d;display:flex;align-items:center;justify-content:center;font-family:'Shippori Mincho';font-weight:700;font-size:17px;transform:rotate(-6deg);flex:none;">聴</div>
+              <div style="font-family:'Shippori Mincho',serif;font-weight:700;font-size:15px;color:#2c2620;line-height:1.2;">The Quiet Hour</div>
+            </div>
+
+            <!-- sticky 1 ochre -->
+            <div style="position:absolute;left:96px;top:150px;width:150px;background:#f3d9a0;padding:14px 14px 16px;box-shadow:0 8px 18px -8px rgba(70,55,30,.45);transform:rotate(-3deg);">
+              <div style="position:absolute;top:-9px;left:46px;width:56px;height:18px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 5px,rgba(255,255,255,.25) 5px 10px);transform:rotate(-5deg);"></div>
+              <div style="font-family:'Klee One',cursive;font-size:14.5px;line-height:1.45;color:#5c4a24;">Morning = attention is whole</div>
+            </div>
+
+            <!-- sticky 2 sage -->
+            <div style="position:absolute;left:600px;top:66px;width:156px;background:#d6dfba;padding:14px 14px 16px;box-shadow:0 8px 18px -8px rgba(70,55,30,.45);transform:rotate(2.5deg);">
+              <div style="position:absolute;top:-9px;left:50px;width:56px;height:18px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 5px,rgba(255,255,255,.25) 5px 10px);transform:rotate(4deg);"></div>
+              <div style="font-family:'Klee One',cursive;font-size:14.5px;line-height:1.45;color:#475030;">Slow reading = quiet resistance ★</div>
+            </div>
+
+            <!-- sticky 3 pink -->
+            <div style="position:absolute;left:170px;top:340px;width:158px;background:#f0d2cf;padding:14px 14px 16px;box-shadow:0 8px 18px -8px rgba(70,55,30,.45);transform:rotate(-1.5deg);">
+              <div style="position:absolute;top:-9px;left:48px;width:56px;height:18px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 5px,rgba(255,255,255,.28) 5px 10px);transform:rotate(-3deg);"></div>
+              <div style="font-family:'Klee One',cursive;font-size:14.5px;line-height:1.45;color:#7a3f3a;">Block 8–10am · no inbox ✎</div>
+            </div>
+
+            <!-- sticky 4 blue -->
+            <div style="position:absolute;left:704px;top:330px;width:150px;background:#cdd9e6;padding:13px 14px 15px;box-shadow:0 8px 18px -8px rgba(70,55,30,.45);transform:rotate(3deg);">
+              <div style="font-family:'Klee One',cursive;font-size:14px;line-height:1.4;color:#33455f;">Voice: Haru · 0.9× · feels calm</div>
+            </div>
+
+            <!-- clip card -->
+            <div style="position:absolute;left:472px;top:248px;width:212px;background:#faf4e8;border:1px solid #e6dabf;border-radius:8px;padding:14px 15px;box-shadow:0 10px 22px -10px rgba(70,55,30,.5);transform:rotate(-1deg);">
+              <div style="font-family:'Shippori Mincho';font-size:26px;line-height:0;color:#c0432d;height:14px;">“</div>
+              <div style="font-family:'Shippori Mincho',serif;font-size:13.5px;line-height:1.5;color:#3f382d;font-style:italic;">attention is still whole — unbroken, unspent</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid #ece0c6;">
+                <span style="width:24px;height:24px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;flex:none;"><svg width="10" height="10" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg></span>
+                <span style="font:400 11px 'Zen Kaku Gothic New';color:#8c8472;">clip · The Quiet Hour · 1:12</span>
+              </div>
+            </div>
+
+            <!-- docked mini player -->
+            <div style="position:absolute;left:248px;top:474px;display:flex;align-items:center;gap:11px;background:#fdf9f1;border-radius:30px;padding:7px 15px 7px 8px;box-shadow:0 1px 0 #fff inset,0 12px 26px -10px rgba(60,45,25,.5);">
+              <div style="width:38px;height:38px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;border:2px solid #fdf9f1;box-shadow:0 2px 4px rgba(120,40,25,.35);"><svg width="14" height="14" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#fdf9f1"/></svg></div>
+              <div style="display:flex;align-items:center;gap:2.5px;height:22px;">
+                <span style="width:3px;height:55%;border-radius:2px;background:#c0432d;animation:koeWv 1s ease-in-out infinite;"></span>
+                <span style="width:3px;height:90%;border-radius:2px;background:#c0432d;animation:koeWv 1s ease-in-out infinite .12s;"></span>
+                <span style="width:3px;height:50%;border-radius:2px;background:#c0432d;animation:koeWv 1s ease-in-out infinite .24s;"></span>
+                <span style="width:3px;height:75%;border-radius:2px;background:#d98c7a;animation:koeWv 1s ease-in-out infinite .36s;"></span>
+                <span style="width:3px;height:45%;border-radius:2px;background:#e6dabf;"></span>
+                <span style="width:3px;height:62%;border-radius:2px;background:#e6dabf;"></span>
+              </div>
+              <span style="font:500 12px 'DM Mono';color:#6f6557;">1:12</span>
+              <span style="font:500 12px 'DM Mono';color:#4a4236;">1.0×</span>
+            </div>
+
+            <!-- hanko stamp corner -->
+            <div style="position:absolute;right:26px;bottom:22px;width:54px;height:54px;border-radius:50%;border:2.5px solid rgba(192,67,45,.55);display:flex;align-items:center;justify-content:center;color:rgba(192,67,45,.6);font-family:'Shippori Mincho';font-weight:700;font-size:26px;transform:rotate(-8deg);">声</div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

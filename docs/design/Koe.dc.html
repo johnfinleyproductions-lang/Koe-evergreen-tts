@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500;600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Klee+One:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#d2cbbc;font-family:'Zen Kaku Gothic New',sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  @keyframes koeWv{0%,100%{transform:scaleY(.3);}50%{transform:scaleY(1);}}
+  @keyframes koeFade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  @keyframes koeBlink{0%,100%{opacity:1;}50%{opacity:.35;}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:30px;background:radial-gradient(130% 90% at 50% -10%, #e3dccd 0%, #d4ccba 62%, #cabfa9 100%);">
+  <div style="position:relative;width:1120px;height:720px;background:#faf4e8;border:1px solid #e3d6ba;border-radius:16px;overflow:hidden;box-shadow:0 1px 0 #fff inset,0 30px 70px -30px rgba(60,45,25,.6),0 8px 20px -10px rgba(60,45,25,.3);display:flex;flex-direction:column;">
+
+    <!-- ===== TOP BAR (persistent) ===== -->
+    <div style="position:relative;height:62px;flex:none;display:flex;align-items:center;gap:14px;padding:0 22px;background:#f6eedd;border-bottom:1px solid #ece0c6;z-index:3;">
+      <span style="font-family:'Shippori Mincho',serif;font-weight:800;font-size:23px;color:#2c2620;letter-spacing:.01em;">Koe</span>
+      <span style="font-family:'Shippori Mincho',serif;font-size:16px;color:#c0432d;">声</span>
+      <span style="width:1px;height:24px;background:#e0d4b8;margin:0 4px;"></span>
+      <div style="display:flex;align-items:center;gap:9px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#c0432d;animation:koeBlink 1.8s ease-in-out infinite;"></span>
+        <span style="font-family:'Shippori Mincho',serif;font-weight:700;font-size:16px;color:#2c2620;">The Quiet Hour</span>
+        <span style="font-family:'Shippori Mincho',serif;font-size:13px;color:#a99f8c;">· essay</span>
+      </div>
+      <!-- toggle -->
+      <div style="margin-left:auto;">
+        <sc-if value="{{ isRead }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ toggleView }}" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:9px;background:#c0432d;color:#faf4e8;border-radius:22px;padding:9px 17px;font:700 13px 'Zen Kaku Gothic New';box-shadow:0 2px 6px -1px rgba(120,40,25,.4);">
+            <span style="font-size:14px;line-height:1;">⌗</span> Open idea canvas
+            <span style="font-size:14px;line-height:1;">→</span>
+          </button>
+        </sc-if>
+        <sc-if value="{{ isCanvas }}">
+          <button onClick="{{ toggleView }}" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:9px;background:#33455f;color:#faf4e8;border-radius:22px;padding:9px 17px;font:700 13px 'Zen Kaku Gothic New';box-shadow:0 2px 6px -1px rgba(30,40,60,.4);">
+            <span style="font-size:14px;line-height:1;">←</span> Back to reading
+            <span style="font-family:'Shippori Mincho',serif;font-size:14px;line-height:1;">読</span>
+          </button>
+        </sc-if>
+      </div>
+    </div>
+    <!-- continuous progress line under top bar -->
+    <div style="position:relative;height:3px;flex:none;background:#ece0c6;z-index:3;">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:{{ progressPct }}%;background:#c0432d;"></div>
+    </div>
+
+    <!-- ===== CONTENT (swaps) ===== -->
+    <div style="position:relative;flex:1;overflow:hidden;">
+
+      <!-- ---- READING VIEW ---- -->
+      <sc-if value="{{ isRead }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="Reading — The Quiet Hour" style="position:absolute;inset:0;display:flex;justify-content:center;padding:40px;background:#faf4e8;background-image:repeating-linear-gradient(to bottom,transparent 0 33px,rgba(60,95,150,.08) 33px 34px);background-position:0 56px;overflow:auto;">
+          <div style="position:relative;width:840px;">
+            <div style="font-family:'Zen Kaku Gothic New';font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#a99f8c;margin-bottom:6px;">Essay · reading aloud</div>
+            <div style="font-family:'Shippori Mincho',serif;font-weight:700;font-size:30px;color:#2c2620;margin-bottom:24px;letter-spacing:.01em;">The Quiet Hour</div>
+            <div style="max-width:600px;font-family:'Shippori Mincho',serif;font-size:19px;line-height:34px;color:#6f6557;">
+              <sc-for list="{{ words }}" as="word" hint-placeholder-count="60"><span style="{{ word.style }}">{{ word.text }}</span> </sc-for>
+            </div>
+            <!-- margin notes -->
+            <div style="position:absolute;right:6px;top:120px;width:196px;font-family:'Klee One',cursive;font-size:15px;line-height:1.45;color:#33455f;transform:rotate(-1.5deg);">
+              ← the “narrow window” = my best writing time
+              <svg style="display:block;margin-top:4px;" width="60" height="24" viewBox="0 0 60 24"><path d="M58 4 C40 10 24 14 2 20" stroke="#c9bca0" stroke-width="1.4" fill="none" stroke-dasharray="3 3"/></svg>
+            </div>
+            <div style="position:absolute;right:14px;top:300px;width:180px;font-family:'Klee One',cursive;font-size:15px;line-height:1.45;color:#7c8a5b;transform:rotate(1deg);">
+              try: no inbox till 10am ✎
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ---- CANVAS VIEW ---- -->
+      <sc-if value="{{ isCanvas }}">
+        <div data-screen-label="Idea canvas" style="position:absolute;inset:0;background:#f1e8d6;background-image:radial-gradient(circle at 1px 1px, rgba(75,60,35,.12) 1px, transparent 0);background-size:24px 24px;overflow:hidden;">
+          <!-- connectors -->
+          <svg style="position:absolute;inset:0;" width="1120" height="572" viewBox="0 0 1120 572">
+            <path d="M430 150 C330 175 270 200 250 235" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+            <path d="M500 142 C620 130 700 128 760 138" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+            <path d="M425 184 C360 280 320 360 320 405" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+            <path d="M505 175 C600 240 640 290 660 318" stroke="#c4b693" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+            <path d="M790 165 C860 250 890 330 900 388" stroke="#c4b693" stroke-width="1.6" fill="none"/>
+            <circle cx="430" cy="150" r="3" fill="#c4b693"/><circle cx="500" cy="142" r="3" fill="#c4b693"/>
+          </svg>
+          <!-- toolbar -->
+          <div style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;background:#faf4e8;border:1px solid #e0d4b8;border-radius:13px;padding:8px;box-shadow:0 6px 16px -8px rgba(70,55,30,.4);">
+            <div style="width:38px;height:38px;border-radius:9px;background:#2c2620;display:flex;align-items:center;justify-content:center;color:#faf4e8;font-size:16px;">✎</div>
+            <div style="width:38px;height:38px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-size:16px;">▢</div>
+            <div style="width:38px;height:38px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-size:15px;">✂</div>
+            <div style="width:38px;height:38px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-family:'Shippori Mincho';font-size:16px;">字</div>
+            <div style="width:38px;height:38px;border-radius:9px;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;color:#6f6557;font-size:17px;">⌗</div>
+            <div style="height:1px;background:#e6dabf;margin:1px 4px;"></div>
+            <div style="width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;"><span style="width:18px;height:18px;border-radius:50%;background:#c0432d;border:2px solid #faf4e8;box-shadow:0 0 0 1px #e0d4b8;"></span></div>
+          </div>
+          <!-- topic node -->
+          <div style="position:absolute;left:350px;top:118px;width:162px;display:flex;align-items:center;gap:11px;background:#faf4e8;border:1.5px solid #2c2620;border-radius:12px;padding:13px 15px;box-shadow:0 7px 18px -9px rgba(70,55,30,.5);">
+            <div style="width:36px;height:36px;border-radius:50%;border:2px solid #c0432d;color:#c0432d;display:flex;align-items:center;justify-content:center;font-family:'Shippori Mincho';font-weight:700;font-size:18px;transform:rotate(-6deg);flex:none;">聴</div>
+            <div style="font-family:'Shippori Mincho',serif;font-weight:700;font-size:16px;color:#2c2620;line-height:1.2;">The Quiet Hour</div>
+          </div>
+          <!-- sticky 1 ochre -->
+          <div style="position:absolute;left:150px;top:230px;width:166px;background:#f3d9a0;padding:15px 15px 17px;box-shadow:0 9px 20px -9px rgba(70,55,30,.45);transform:rotate(-3deg);">
+            <div style="position:absolute;top:-9px;left:52px;width:60px;height:18px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 5px,rgba(255,255,255,.25) 5px 10px);transform:rotate(-5deg);"></div>
+            <div style="font-family:'Klee One',cursive;font-size:15.5px;line-height:1.45;color:#5c4a24;">Morning = attention is whole</div>
+          </div>
+          <!-- sticky 2 sage -->
+          <div style="position:absolute;left:720px;top:108px;width:172px;background:#d6dfba;padding:15px 15px 17px;box-shadow:0 9px 20px -9px rgba(70,55,30,.45);transform:rotate(2.5deg);">
+            <div style="position:absolute;top:-9px;left:56px;width:60px;height:18px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 5px,rgba(255,255,255,.25) 5px 10px);transform:rotate(4deg);"></div>
+            <div style="font-family:'Klee One',cursive;font-size:15.5px;line-height:1.45;color:#475030;">Slow reading = quiet resistance ★</div>
+          </div>
+          <!-- sticky 3 pink -->
+          <div style="position:absolute;left:240px;top:398px;width:176px;background:#f0d2cf;padding:15px 15px 17px;box-shadow:0 9px 20px -9px rgba(70,55,30,.45);transform:rotate(-1.5deg);">
+            <div style="position:absolute;top:-9px;left:54px;width:60px;height:18px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 5px,rgba(255,255,255,.28) 5px 10px);transform:rotate(-3deg);"></div>
+            <div style="font-family:'Klee One',cursive;font-size:15.5px;line-height:1.45;color:#7a3f3a;">Block 8–10am · no inbox ✎</div>
+          </div>
+          <!-- sticky 4 blue -->
+          <div style="position:absolute;left:858px;top:380px;width:164px;background:#cdd9e6;padding:14px 15px 16px;box-shadow:0 9px 20px -9px rgba(70,55,30,.45);transform:rotate(3deg);">
+            <div style="font-family:'Klee One',cursive;font-size:15px;line-height:1.4;color:#33455f;">Voice: Haru · 0.9× · feels calm</div>
+          </div>
+          <!-- clip card -->
+          <div style="position:absolute;left:560px;top:298px;width:224px;background:#faf4e8;border:1px solid #e6dabf;border-radius:8px;padding:15px 16px;box-shadow:0 11px 24px -11px rgba(70,55,30,.5);transform:rotate(-1deg);">
+            <div style="font-family:'Shippori Mincho';font-size:28px;line-height:0;color:#c0432d;height:15px;">“</div>
+            <div style="font-family:'Shippori Mincho',serif;font-size:14.5px;line-height:1.5;color:#3f382d;font-style:italic;">attention is still whole — unbroken, unspent</div>
+            <div style="display:flex;align-items:center;gap:9px;margin-top:12px;padding-top:11px;border-top:1px solid #ece0c6;">
+              <span style="width:26px;height:26px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;flex:none;"><svg width="10" height="10" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg></span>
+              <span style="font:400 11.5px 'Zen Kaku Gothic New';color:#8c8472;">clip · The Quiet Hour · 1:12</span>
+            </div>
+          </div>
+          <!-- hanko -->
+          <div style="position:absolute;right:30px;bottom:24px;width:56px;height:56px;border-radius:50%;border:2.5px solid rgba(192,67,45,.5);display:flex;align-items:center;justify-content:center;color:rgba(192,67,45,.6);font-family:'Shippori Mincho';font-weight:700;font-size:27px;transform:rotate(-8deg);">声</div>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <!-- ===== PLAYER BAR (persistent — keeps reading across views) ===== -->
+    <div style="height:86px;flex:none;display:flex;align-items:center;gap:18px;padding:0 24px;background:#f6eedd;border-top:1px solid #ece0c6;z-index:3;">
+      <!-- transport -->
+      <div style="display:flex;align-items:center;gap:11px;">
+        <button onClick="{{ prevSentence }}" style="all:unset;cursor:pointer;width:40px;height:40px;border-radius:50%;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(70,55,30,.14);">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M5 3v10M13 3 7 8l6 5z" fill="#2c2620"/></svg>
+        </button>
+        <button onClick="{{ togglePlay }}" style="all:unset;cursor:pointer;width:54px;height:54px;border-radius:50%;background:#c0432d;display:flex;align-items:center;justify-content:center;border:2px solid #faf4e8;box-shadow:0 2px 6px rgba(120,40,25,.4);">
+          <sc-if value="{{ playing }}" hint-placeholder-val="{{ true }}">
+            <svg width="18" height="18" viewBox="0 0 18 18"><rect x="3" y="2" width="4" height="14" rx="1.3" fill="#faf4e8"/><rect x="11" y="2" width="4" height="14" rx="1.3" fill="#faf4e8"/></svg>
+          </sc-if>
+          <sc-if value="{{ paused }}">
+            <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 4l11 6-11 6z" fill="#faf4e8"/></svg>
+          </sc-if>
+        </button>
+        <button onClick="{{ nextSentence }}" style="all:unset;cursor:pointer;width:40px;height:40px;border-radius:50%;background:#f4ecdd;border:1px solid #e0d4b8;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(70,55,30,.14);">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M11 3v10M3 3l6 5-6 5z" fill="#2c2620"/></svg>
+        </button>
+      </div>
+      <!-- waveform + time -->
+      <span style="font:500 12px 'DM Mono';color:#6f6557;flex:none;">{{ elapsedStr }}</span>
+      <div style="flex:1;display:flex;align-items:center;gap:3px;height:34px;">
+        <sc-for list="{{ waveBars }}" as="bar" hint-placeholder-count="48"><span style="{{ bar.style }}"></span></sc-for>
+      </div>
+      <span style="font:500 12px 'DM Mono';color:#8c8472;flex:none;">{{ totalStr }}</span>
+      <!-- chips -->
+      <div style="display:flex;align-items:center;gap:9px;flex:none;padding-left:6px;">
+        <span style="font:500 12px 'DM Mono';color:#4a4236;border:1px solid #e0d4b8;border-radius:20px;padding:6px 11px;background:#f4ecdd;">1.0×</span>
+        <span style="display:flex;align-items:center;gap:7px;font:400 12px 'Zen Kaku Gothic New';color:#4a4236;border:1px solid #e0d4b8;border-radius:20px;padding:6px 11px;background:#f4ecdd;"><span style="width:18px;height:18px;border-radius:50%;background:#33455f;color:#faf4e8;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;">春</span>Haru</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1180,&quot;height&quot;:780}}">
+class Component extends DCLogic {
+  state = { view: 'read', playing: true, elapsed: 72, wordIndex: 6 };
+  total = 220;
+  WORDS = "The quietest hour of the morning belongs to no one. Before the inbox wakes, before the first notification, there is a narrow window where attention is still whole — unbroken, unspent. To read slowly, then, is a small act of resistance. It is choosing depth in a world that rewards speed, and the choosing itself becomes the practice.".split(/\s+/);
+
+  componentDidMount() {
+    this.sentenceStarts = [0];
+    this.WORDS.forEach((w, i) => { if (/[.!?]$/.test(w) && i + 1 < this.WORDS.length) this.sentenceStarts.push(i + 1); });
+    try {
+      const s = JSON.parse(localStorage.getItem('koe.state') || 'null');
+      if (s) this.setState({ view: s.view ?? 'read', playing: s.playing ?? true, elapsed: s.elapsed ?? 72, wordIndex: s.wordIndex ?? 6 });
+    } catch (e) {}
+    this._acc = 0; this._wacc = 0;
+    this._timer = setInterval(() => this.tick(), 60);
+  }
+  componentWillUnmount() { clearInterval(this._timer); }
+
+  tick() {
+    if (!this.state.playing) return;
+    const N = this.WORDS.length;
+    this._wacc += 60; this._acc += 60;
+    let { wordIndex, elapsed } = this.state; let changed = false;
+    if (this._wacc >= 430) { this._wacc -= 430; wordIndex = (wordIndex + 1) % N; changed = true; }
+    if (this._acc >= 1000) { this._acc -= 1000; elapsed += 1; if (elapsed > this.total) elapsed = 0; changed = true; }
+    if (changed) { this.setState({ wordIndex, elapsed }); this.persist({ ...this.state, wordIndex, elapsed }); }
+  }
+  persist(s) { try { localStorage.setItem('koe.state', JSON.stringify({ view: s.view, playing: s.playing, elapsed: s.elapsed, wordIndex: s.wordIndex })); } catch (e) {} }
+
+  toggleView() { const view = this.state.view === 'read' ? 'canvas' : 'read'; this.setState({ view }); this.persist({ ...this.state, view }); }
+  togglePlay() { const playing = !this.state.playing; this.setState({ playing }); this.persist({ ...this.state, playing }); }
+  prevSentence() {
+    const st = this.sentenceStarts, wi = this.state.wordIndex;
+    let cur = 0; for (const s of st) { if (s <= wi) cur = s; else break; }
+    let target = cur;
+    if (wi - cur <= 1) { const idx = st.indexOf(cur); target = idx > 0 ? st[idx - 1] : 0; }
+    this._wacc = 0; this.setState({ wordIndex: target }); this.persist({ ...this.state, wordIndex: target });
+  }
+  nextSentence() {
+    const st = this.sentenceStarts, wi = this.state.wordIndex;
+    let target = st[st.length - 1];
+    for (const s of st) { if (s > wi) { target = s; break; } }
+    this._wacc = 0; this.setState({ wordIndex: target }); this.persist({ ...this.state, wordIndex: target });
+  }
+
+  renderVals() {
+    const fmt = (s) => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    const wi = this.state.wordIndex;
+    const words = this.WORDS.map((w, i) => ({
+      text: w,
+      style: i === wi
+        ? 'background:rgba(192,67,45,.22);border-radius:4px;padding:1px 4px;color:#2c2620;font-weight:600;box-decoration-break:clone;-webkit-box-decoration-break:clone;'
+        : (i < wi ? 'color:#3f382d;' : 'color:#9a8f7c;')
+    }));
+    const playState = this.state.playing ? 'running' : 'paused';
+    const spec = [['60%','#c0432d',0],['92%','#c0432d',1],['48%','#c0432d',2],['78%','#d98c7a',3],['55%','#d98c7a',4]];
+    const waveBars = [];
+    for (let i = 0; i < 56; i++) {
+      if (i < 5) {
+        const [h, c, k] = spec[i];
+        waveBars.push({ style: `flex:none;width:3.5px;height:${h};border-radius:2px;background:${c};transform-origin:center;animation:koeWv 1s ease-in-out infinite ${k * 0.12}s;animation-play-state:${playState};` });
+      } else {
+        const h = 30 + ((i * 37) % 60);
+        waveBars.push({ style: `flex:none;width:3.5px;height:${h}%;border-radius:2px;background:#e6dabf;` });
+      }
+    }
+    return {
+      isRead: this.state.view === 'read',
+      isCanvas: this.state.view === 'canvas',
+      playing: this.state.playing,
+      paused: !this.state.playing,
+      words, waveBars,
+      elapsedStr: fmt(this.state.elapsed),
+      totalStr: fmt(this.total),
+      progressPct: (this.state.elapsed / this.total * 100).toFixed(2),
+      toggleView: () => this.toggleView(),
+      togglePlay: () => this.togglePlay(),
+      prevSentence: () => this.prevSentence(),
+      nextSentence: () => this.nextSentence(),
+    };
+  }
+}
+</script>
+</body>
+</html>

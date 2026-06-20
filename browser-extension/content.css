@@ -1,0 +1,28 @@
+/* Read in Koe — the on-page selection chip. */
+.koe-read-chip {
+  position: absolute;
+  z-index: 2147483647;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #c0432d;                /* shu (朱) — the Koe accent */
+  color: #fff;
+  font: 600 13px -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+  line-height: 1;
+  padding: 8px 13px 8px 10px;
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(40, 30, 15, .35), 0 2px 5px rgba(40, 30, 15, .2);
+  border: 1px solid rgba(255, 255, 255, .18);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background .15s ease;
+}
+.koe-read-chip:hover { background: #a8381f; }
+.koe-read-chip .koe-mark {
+  font-family: "Hiragino Mincho ProN", serif;
+  font-size: 14px;
+  opacity: .92;
+}
+.koe-read-chip.koe-sent { background: #7c8a5b; }   /* green confirm */
+.koe-read-chip.koe-error { background: #8c5a3c; }  /* muted: app not open */
