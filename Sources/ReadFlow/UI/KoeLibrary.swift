@@ -99,6 +99,9 @@ struct KoeLibraryView: View {
                 rainyWindow.position(x: geo.size.width / 2, y: 150)
                 deskSurface
                 lampPool
+                bookshelf
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.leading, 18).padding(.top, geo.size.height * 0.26)
                 VinylWidget().position(x: 96, y: geo.size.height - 78)
                 SteamingMug().position(x: geo.size.width - 96, y: geo.size.height - 120)
                 journal.position(x: geo.size.width / 2 - 18, y: geo.size.height - 252)
@@ -186,7 +189,6 @@ struct KoeLibraryView: View {
             leftPage
             Rectangle().fill(LinearGradient(colors: [Color(hex: 0x503C1E, alpha: 0.45), Color(hex: 0x503C1E, alpha: 0.12)], startPoint: .leading, endPoint: .trailing)).frame(width: 4)
             rightPage
-            sideTabs
         }
         .frame(height: 470)
         .shadow(color: .black.opacity(0.6), radius: 40, y: 32)
@@ -285,35 +287,65 @@ struct KoeLibraryView: View {
         .clipShape(.rect(bottomTrailingRadius: 8, topTrailingRadius: 8))
     }
 
-    // SIDE — vertical section tabs
-    private var sideTabs: some View {
-        VStack(spacing: 0) {
-            ForEach(store.sections) { s in
-                Button { store.activeID = s.id } label: {
-                    HStack(spacing: 0) {
-                        Circle().fill(store.accent(s.id)).frame(width: 9, height: 9).padding(.bottom, 6)
-                        Text(s.title.isEmpty ? "Untitled" : s.title)
-                            .font(KoeFont.gothic(12, store.activeID == s.id ? .bold : .medium))
-                            .foregroundStyle(store.activeID == s.id ? Color(hex: 0x3A3328) : Color(hex: 0x9A8358))
-                            .lineLimit(1)
-                    }
-                    .rotationEffect(.degrees(90))
-                    .fixedSize()
-                    .frame(width: 34, height: 110)
-                    .background(store.activeID == s.id ? Color(hex: 0xF3EAD4) : Color(hex: 0xE7D9BB, alpha: 0.5))
-                    .clipShape(.rect(bottomTrailingRadius: 9, topTrailingRadius: 9))
-                }.buttonStyle(.plain)
+    // BOOKSHELF — your notebooks, on a shelf on the wall. Pick one to open it on
+    // the desk; "+" adds a new notebook.
+    private var bookshelf: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("棚  NOTEBOOKS").font(KoeFont.gothic(9, .bold)).tracking(1.5)
+                .foregroundStyle(Color(hex: 0xB89A66)).padding(.leading, 4)
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(store.sections) { bookSpine($0) }
+                addBook
             }
-            Button { store.addSection() } label: {
-                Text("＋").font(KoeFont.gothic(14, .bold)).foregroundStyle(Color(hex: 0xA08A5F))
-                    .frame(width: 30, height: 44)
-                    .background(Color(hex: 0xE7D9BB, alpha: 0.45))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(hex: 0xC4AD7F), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-                    .clipShape(.rect(bottomTrailingRadius: 10, topTrailingRadius: 10))
-            }.buttonStyle(.plain)
-            Spacer(minLength: 0)
+            // shelf board
+            ZStack(alignment: .top) {
+                LinearGradient(colors: [Color(hex: 0x4B3825), Color(hex: 0x2F2316)], startPoint: .top, endPoint: .bottom)
+                Rectangle().fill(.white.opacity(0.06)).frame(height: 2)
+            }
+            .frame(height: 13)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+            .shadow(color: .black.opacity(0.55), radius: 8, y: 5)
         }
-        .padding(.top, 24)
+        .padding(11)
+        .background(RoundedRectangle(cornerRadius: 11).fill(Color(hex: 0x140F0B, alpha: 0.40)))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color(hex: 0x7C6848, alpha: 0.25), lineWidth: 1))
+        .fixedSize()
+    }
+
+    private func bookSpine(_ nb: LibrarySection) -> some View {
+        let active = store.activeID == nb.id
+        let accent = store.accent(nb.id)
+        return Button { store.activeID = nb.id } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(LinearGradient(colors: [accent.opacity(0.55), accent, accent.opacity(0.78)], startPoint: .leading, endPoint: .trailing))
+                Rectangle().fill(.white.opacity(0.20)).frame(width: 1.5).offset(x: -6)   // spine sheen
+                Rectangle().fill(.black.opacity(0.22)).frame(height: 8).offset(y: -28)   // top band
+                Rectangle().fill(.black.opacity(0.22)).frame(height: 8).offset(y: 28)    // bottom band
+                Text(nb.title.isEmpty ? "Untitled" : nb.title)
+                    .font(KoeFont.gothic(10.5, .bold)).foregroundStyle(.white.opacity(0.94))
+                    .lineLimit(1).fixedSize()
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 18, height: 74)
+            }
+            .frame(width: 22, height: active ? 98 : 86)
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(.black.opacity(0.28), lineWidth: 0.5))
+            .offset(y: active ? -7 : 0)
+            .shadow(color: .black.opacity(0.45), radius: active ? 7 : 2, y: 3)
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: active)
+        .help(nb.title.isEmpty ? "Untitled notebook" : nb.title)
+    }
+
+    private var addBook: some View {
+        Button { store.addSection() } label: {
+            Text("＋").font(KoeFont.gothic(13, .bold)).foregroundStyle(Color(hex: 0xC4AD7F))
+                .frame(width: 22, height: 86)
+                .background(RoundedRectangle(cornerRadius: 2).fill(Color(hex: 0x2C2017, alpha: 0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color(hex: 0xC4AD7F), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+        }
+        .buttonStyle(.plain).help("New notebook")
     }
 
     private func wordCount(_ s: String) -> Int { s.split { $0 == " " || $0 == "\n" || $0 == "\t" }.count }
