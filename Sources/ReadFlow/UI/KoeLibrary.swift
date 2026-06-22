@@ -66,7 +66,8 @@ final class LibraryStore: ObservableObject {
         if let d = try? JSONEncoder().encode(pulled) { defaults.set(d, forKey: pulledKey) }
     }
     func activeIndex() -> Int? { sections.firstIndex { $0.id == activeID } }
-    func addSection() { let s = LibrarySection(title: "Untitled \(sections.count + 1)", body: ""); sections.append(s); activeID = s.id; save() }
+    @discardableResult
+    func addSection() -> UUID { let s = LibrarySection(title: "Untitled \(sections.count + 1)", body: ""); sections.append(s); activeID = s.id; save(); return s.id }
     func removeSection(_ id: UUID) {
         sections.removeAll { $0.id == id }
         if sections.isEmpty { sections = [LibrarySection(title: "Untitled", body: "")] }
@@ -89,28 +90,129 @@ struct KoeLibraryView: View {
     @ObservedObject var model: ReaderHUDModel
     @ObservedObject var store = LibraryStore.shared
     @ObservedObject private var boards = BoardStore.shared
+    /// nil = browsing the bookshelf; a value = that notebook is open ~full-screen.
+    @State private var openID: UUID?
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // Cozy study backdrop (always present)
                 room
                 warmGlow
                 StringLights().frame(height: 70).frame(maxHeight: .infinity, alignment: .top)
                 rainyWindow.position(x: geo.size.width / 2, y: 150)
                 deskSurface
                 lampPool
-                bookshelf
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.leading, 18).padding(.top, geo.size.height * 0.26)
                 VinylWidget().position(x: 96, y: geo.size.height - 78)
                 SteamingMug().position(x: geo.size.width - 96, y: geo.size.height - 120)
-                journal.position(x: geo.size.width / 2 - 18, y: geo.size.height - 252)
                 ambientPanel.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(20)
                 vignette
+
+                // Browse the shelf, or read/write an open notebook.
+                if openID != nil {
+                    openMode(geo: geo)
+                } else {
+                    shelfMode(geo: geo)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
         }
+    }
+
+    // MARK: - Shelf mode (browse all notebooks)
+
+    private func shelfMode(geo: GeometryProxy) -> some View {
+        VStack(spacing: 18) {
+            Text("棚  Your Notebooks")
+                .font(KoeFont.mincho(22, bold: true)).foregroundStyle(Color(hex: 0xE8DCC4))
+                .shadow(color: .black.opacity(0.5), radius: 6)
+            HStack(alignment: .bottom, spacing: 7) {
+                ForEach(store.sections) { bigSpine($0) }
+                bigAddBook
+            }
+            // shelf board
+            ZStack(alignment: .top) {
+                LinearGradient(colors: [Color(hex: 0x5A4327), Color(hex: 0x2F2316)], startPoint: .top, endPoint: .bottom)
+                Rectangle().fill(.white.opacity(0.07)).frame(height: 3)
+            }
+            .frame(width: min(geo.size.width * 0.82, 760), height: 18)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .shadow(color: .black.opacity(0.6), radius: 12, y: 7)
+            Text("Click a book to open it · ＋ to start a new one")
+                .font(KoeFont.gothic(11)).foregroundStyle(Color(hex: 0xB89A66))
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(.opacity)
+    }
+
+    private func bigSpine(_ nb: LibrarySection) -> some View {
+        let accent = store.accent(nb.id)
+        // organic varied heights from the id hash
+        let h = 150.0 + Double(abs(nb.id.hashValue) % 50)
+        return Button { withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) { store.activeID = nb.id; openID = nb.id } } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(LinearGradient(colors: [accent.opacity(0.55), accent, accent.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                Rectangle().fill(.white.opacity(0.22)).frame(width: 2).offset(x: -13)
+                Rectangle().fill(.black.opacity(0.22)).frame(height: 12).offset(y: -(h/2) + 16)
+                Rectangle().fill(.black.opacity(0.22)).frame(height: 12).offset(y: (h/2) - 16)
+                Text(nb.title.isEmpty ? "Untitled" : nb.title)
+                    .font(KoeFont.gothic(13, .bold)).foregroundStyle(.white.opacity(0.95))
+                    .lineLimit(1).fixedSize()
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 24, height: h - 36)
+            }
+            .frame(width: 46, height: h)
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.black.opacity(0.3), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.5), radius: 6, y: 4)
+        }
+        .buttonStyle(.plain)
+        .help(nb.title.isEmpty ? "Untitled notebook" : nb.title)
+    }
+
+    private var bigAddBook: some View {
+        Button { let id = store.addSection(); withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) { openID = id } } label: {
+            VStack(spacing: 6) {
+                Image(systemName: "plus").font(.system(size: 16, weight: .bold))
+                Text("New").font(KoeFont.gothic(10, .bold))
+            }
+            .foregroundStyle(Color(hex: 0xC4AD7F))
+            .frame(width: 46, height: 150)
+            .background(RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0x2C2017, alpha: 0.5)))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color(hex: 0xC4AD7F), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        }
+        .buttonStyle(.plain).help("New notebook")
+    }
+
+    // MARK: - Open mode (a notebook, ~86% of the screen)
+
+    private func openMode(geo: GeometryProxy) -> some View {
+        ZStack {
+            // dim the room behind the open book
+            Color.black.opacity(0.35).ignoresSafeArea()
+                .onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { openID = nil } }
+
+            HStack(spacing: 0) {
+                leftPage
+                Rectangle().fill(LinearGradient(colors: [Color(hex: 0x503C1E, alpha: 0.5), Color(hex: 0x503C1E, alpha: 0.12)], startPoint: .leading, endPoint: .trailing)).frame(width: 5)
+                rightPage
+            }
+            .frame(width: geo.size.width * 0.88, height: geo.size.height * 0.88)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .shadow(color: .black.opacity(0.7), radius: 50, y: 30)
+            .overlay(alignment: .topLeading) {
+                Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { openID = nil } } label: {
+                    HStack(spacing: 6) { Image(systemName: "chevron.left"); Text("Bookshelf").font(KoeFont.gothic(12, .bold)) }
+                        .foregroundStyle(Color(hex: 0xF3EAD4))
+                        .padding(.horizontal, 13).padding(.vertical, 8)
+                        .background(Capsule().fill(Color(hex: 0x2C2017, alpha: 0.9)))
+                }
+                .buttonStyle(.plain).padding(14)
+            }
+        }
+        .transition(.opacity)
     }
 
     // MARK: Room / desk / light
@@ -182,17 +284,7 @@ struct KoeLibraryView: View {
             .background(Capsule().fill(.white.opacity(0.05)))
     }
 
-    // MARK: The open journal
-
-    private var journal: some View {
-        HStack(spacing: 0) {
-            leftPage
-            Rectangle().fill(LinearGradient(colors: [Color(hex: 0x503C1E, alpha: 0.45), Color(hex: 0x503C1E, alpha: 0.12)], startPoint: .leading, endPoint: .trailing)).frame(width: 4)
-            rightPage
-        }
-        .frame(height: 470)
-        .shadow(color: .black.opacity(0.6), radius: 40, y: 32)
-    }
+    // MARK: The two journal pages (shown large in open mode)
 
     // LEFT — pulled material
     private var leftPage: some View {
@@ -234,8 +326,8 @@ struct KoeLibraryView: View {
             }
             .menuStyle(.borderlessButton)
         }
-        .padding(24)
-        .frame(width: 312)
+        .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(LinearGradient(colors: [Color(hex: 0xF3EAD4), Color(hex: 0xECE0C4)], startPoint: .top, endPoint: .bottom))
         .clipShape(.rect(topLeadingRadius: 8, bottomLeadingRadius: 8))
     }
@@ -268,6 +360,7 @@ struct KoeLibraryView: View {
                         }
                     }
                     .padding(.horizontal, 18).padding(.top, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     HStack(spacing: 8) {
                         Circle().fill(Color(hex: 0x7C8A5B)).frame(width: 6, height: 6)
@@ -282,70 +375,9 @@ struct KoeLibraryView: View {
                 .onChange(of: store.sections) { _ in store.save() }
             }
         }
-        .frame(width: 312)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: 0xFBF4E4))
         .clipShape(.rect(bottomTrailingRadius: 8, topTrailingRadius: 8))
-    }
-
-    // BOOKSHELF — your notebooks, on a shelf on the wall. Pick one to open it on
-    // the desk; "+" adds a new notebook.
-    private var bookshelf: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("棚  NOTEBOOKS").font(KoeFont.gothic(9, .bold)).tracking(1.5)
-                .foregroundStyle(Color(hex: 0xB89A66)).padding(.leading, 4)
-            HStack(alignment: .bottom, spacing: 3) {
-                ForEach(store.sections) { bookSpine($0) }
-                addBook
-            }
-            // shelf board
-            ZStack(alignment: .top) {
-                LinearGradient(colors: [Color(hex: 0x4B3825), Color(hex: 0x2F2316)], startPoint: .top, endPoint: .bottom)
-                Rectangle().fill(.white.opacity(0.06)).frame(height: 2)
-            }
-            .frame(height: 13)
-            .clipShape(RoundedRectangle(cornerRadius: 2))
-            .shadow(color: .black.opacity(0.55), radius: 8, y: 5)
-        }
-        .padding(11)
-        .background(RoundedRectangle(cornerRadius: 11).fill(Color(hex: 0x140F0B, alpha: 0.40)))
-        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color(hex: 0x7C6848, alpha: 0.25), lineWidth: 1))
-        .fixedSize()
-    }
-
-    private func bookSpine(_ nb: LibrarySection) -> some View {
-        let active = store.activeID == nb.id
-        let accent = store.accent(nb.id)
-        return Button { store.activeID = nb.id } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(LinearGradient(colors: [accent.opacity(0.55), accent, accent.opacity(0.78)], startPoint: .leading, endPoint: .trailing))
-                Rectangle().fill(.white.opacity(0.20)).frame(width: 1.5).offset(x: -6)   // spine sheen
-                Rectangle().fill(.black.opacity(0.22)).frame(height: 8).offset(y: -28)   // top band
-                Rectangle().fill(.black.opacity(0.22)).frame(height: 8).offset(y: 28)    // bottom band
-                Text(nb.title.isEmpty ? "Untitled" : nb.title)
-                    .font(KoeFont.gothic(10.5, .bold)).foregroundStyle(.white.opacity(0.94))
-                    .lineLimit(1).fixedSize()
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 18, height: 74)
-            }
-            .frame(width: 22, height: active ? 98 : 86)
-            .overlay(RoundedRectangle(cornerRadius: 2).stroke(.black.opacity(0.28), lineWidth: 0.5))
-            .offset(y: active ? -7 : 0)
-            .shadow(color: .black.opacity(0.45), radius: active ? 7 : 2, y: 3)
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: active)
-        .help(nb.title.isEmpty ? "Untitled notebook" : nb.title)
-    }
-
-    private var addBook: some View {
-        Button { store.addSection() } label: {
-            Text("＋").font(KoeFont.gothic(13, .bold)).foregroundStyle(Color(hex: 0xC4AD7F))
-                .frame(width: 22, height: 86)
-                .background(RoundedRectangle(cornerRadius: 2).fill(Color(hex: 0x2C2017, alpha: 0.5)))
-                .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color(hex: 0xC4AD7F), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-        }
-        .buttonStyle(.plain).help("New notebook")
     }
 
     private func wordCount(_ s: String) -> Int { s.split { $0 == " " || $0 == "\n" || $0 == "\t" }.count }
