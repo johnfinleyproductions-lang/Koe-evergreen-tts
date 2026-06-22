@@ -15,6 +15,7 @@
 
 import SwiftUI
 import AppKit
+import AVFoundation
 
 // MARK: - View Model
 
@@ -544,11 +545,64 @@ private struct Waveform: View {
 
 // MARK: - Player bar
 
+private struct VoiceOption: Identifiable { let id: String; let label: String }
+
 private struct KoePlayerBar: View {
     @ObservedObject var model: ReaderHUDModel
+    @ObservedObject private var settings = Settings.shared
     var palette: KoePalette { model.palette }
 
     private let rates: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+
+    // MARK: Engine / voice switching
+
+    private var engineBinding: Binding<EngineKind> {
+        Binding(get: { settings.engineKind }, set: { settings.engineKind = $0 })
+    }
+    private var voiceBinding: Binding<String> {
+        switch settings.engineKind {
+        case .system: return Binding(get: { settings.systemVoiceID }, set: { settings.systemVoiceID = $0 })
+        case .kokoro: return Binding(get: { settings.kokoroVoice }, set: { settings.kokoroVoice = $0 })
+        case .azure:  return Binding(get: { settings.azureVoice }, set: { settings.azureVoice = $0 })
+        }
+    }
+    private var voiceOptions: [VoiceOption] {
+        switch settings.engineKind {
+        case .system:
+            let voices = AVSpeechSynthesisVoice.speechVoices()
+                .filter { $0.language.hasPrefix("en") }
+                .sorted { $0.name < $1.name }
+            return [VoiceOption(id: "", label: "Default")]
+                + voices.map { VoiceOption(id: $0.identifier, label: $0.name) }
+        case .kokoro:
+            return [
+                VoiceOption(id: "af_heart", label: "Heart — warm (F)"),
+                VoiceOption(id: "af_bella", label: "Bella (F)"),
+                VoiceOption(id: "af_nova", label: "Nova (F)"),
+                VoiceOption(id: "af_sky", label: "Sky (F)"),
+                VoiceOption(id: "af_sarah", label: "Sarah (F)"),
+                VoiceOption(id: "am_adam", label: "Adam (M)"),
+                VoiceOption(id: "am_michael", label: "Michael (M)"),
+                VoiceOption(id: "bf_emma", label: "Emma — UK (F)"),
+                VoiceOption(id: "bm_george", label: "George — UK (M)"),
+            ]
+        case .azure:
+            return [
+                VoiceOption(id: "en-US-JennyNeural", label: "Jenny (F)"),
+                VoiceOption(id: "en-US-AriaNeural", label: "Aria (F)"),
+                VoiceOption(id: "en-US-GuyNeural", label: "Guy (M)"),
+                VoiceOption(id: "en-GB-SoniaNeural", label: "Sonia — UK (F)"),
+            ]
+        }
+    }
+    private var engineShort: String {
+        switch settings.engineKind { case .system: return "System"; case .kokoro: return "Kokoro"; case .azure: return "Azure" }
+    }
+    private var currentVoiceShort: String {
+        let id = voiceBinding.wrappedValue
+        guard let opt = voiceOptions.first(where: { $0.id == id }) else { return "" }
+        return String(opt.label.prefix { $0 != " " && $0 != "—" })
+    }
 
     var body: some View {
         HStack(spacing: 18) {
@@ -590,17 +644,29 @@ private struct KoePlayerBar: View {
             }
             .menuStyle(.borderlessButton).fixedSize()
 
-            // Voice pill (shows the active engine)
-            HStack(spacing: 7) {
-                ZStack {
-                    Circle().fill(palette.noteBlue).frame(width: 18, height: 18)
-                    Text(model.voiceGlyph).font(.system(size: 9, weight: .semibold)).foregroundStyle(.white)
+            // Voice pill — click to switch engine + voice (no menu bar needed)
+            Menu {
+                Picker("Voice engine", selection: engineBinding) {
+                    ForEach(EngineKind.allCases, id: \.self) { k in Text(k.displayName).tag(k) }
                 }
-                Text(model.engineLabel).font(KoeFont.gothic(12, .regular)).foregroundStyle(palette.ink3)
+                Picker("Voice", selection: voiceBinding) {
+                    ForEach(voiceOptions) { opt in Text(opt.label).tag(opt.id) }
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    ZStack {
+                        Circle().fill(palette.noteBlue).frame(width: 18, height: 18)
+                        Text("声").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white)
+                    }
+                    Text(currentVoiceShort.isEmpty ? engineShort : "\(engineShort) · \(currentVoiceShort)")
+                        .font(KoeFont.gothic(12, .regular)).foregroundStyle(palette.ink3).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8)).foregroundStyle(palette.faint)
+                }
+                .padding(.horizontal, 11).padding(.vertical, 6)
+                .background(Capsule().fill(palette.s3))
+                .overlay(Capsule().stroke(palette.line, lineWidth: 1))
             }
-            .padding(.horizontal, 11).padding(.vertical, 6)
-            .background(Capsule().fill(palette.s3))
-            .overlay(Capsule().stroke(palette.line, lineWidth: 1))
+            .menuStyle(.borderlessButton).fixedSize()
         }
         .padding(.horizontal, 24)
         .frame(height: 84)

@@ -146,13 +146,30 @@ final class TTSEngineManager {
 
     // MARK: - Engine selection / construction
 
-    /// Returns the engine for `kind`, constructing and caching it on first use.
+    /// The voice each cached engine was built with, so we can rebuild it when the
+    /// user picks a different voice (engines bake their voice at construction).
+    private var engineVoices: [EngineKind: String] = [:]
+
+    /// The currently-selected voice id for `kind`.
+    private func voice(for kind: EngineKind) -> String {
+        switch kind {
+        case .system: return settings.systemVoiceID
+        case .kokoro: return settings.kokoroVoice
+        case .azure:  return settings.azureVoice
+        }
+    }
+
+    /// Returns the engine for `kind`, constructing and caching it on first use —
+    /// and REBUILDING it if the selected voice changed since it was built (so an
+    /// in-app voice switch takes effect on the next read).
     private func engine(for kind: EngineKind) -> TTSEngine {
-        if let cached = engineCache[kind] {
+        let currentVoice = voice(for: kind)
+        if let cached = engineCache[kind], engineVoices[kind] == currentVoice {
             return cached
         }
         let built = makeEngine(for: kind)
         engineCache[kind] = built
+        engineVoices[kind] = currentVoice
         return built
     }
 
@@ -180,23 +197,13 @@ final class TTSEngineManager {
         }
     }
 
-    /// Invalidate the System engine cache entry when the chosen voice changes so
-    /// a rebuilt instance honors the new voice. (Network engines read settings
-    /// fresh each `speak`, so they don't need invalidation here.)
-    private func invalidateSystemEngineIfVoiceChanged() {
-        // Cheap heuristic: drop the cached system engine; it rebuilds lazily.
-        // Only do this when not the active driver to avoid yanking playback.
-        if let sys = engineCache[.system], sys !== activeEngine {
-            engineCache[.system] = nil
-        }
-    }
-
     // MARK: - Prewarm
 
     /// Prewarm the currently selected engine (load voices / ping server). Safe to
     /// call repeatedly; never blocks, never crashes if the backend is down.
+    /// `engine(for:)` rebuilds the engine if its voice changed, so prewarm always
+    /// warms the right voice.
     func prewarm() {
-        invalidateSystemEngineIfVoiceChanged()
         engine(for: settings.engineKind).prewarm()
     }
 
