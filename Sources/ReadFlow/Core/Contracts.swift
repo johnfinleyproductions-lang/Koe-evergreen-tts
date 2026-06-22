@@ -156,15 +156,20 @@ public enum EngineKind: String, CaseIterable, Sendable {
     case system
     /// Local Kokoro-FastAPI at http://localhost:8880. Natural-voice upgrade.
     case kokoro
+    /// Chatterbox-TTS-Server (Resemble Chatterbox Turbo) over an OpenAI-compatible
+    /// `/v1/audio/speech` endpoint. Optional; higher-fidelity expressive voices,
+    /// but NO native word timestamps (highlight is estimated from audio duration).
+    case chatterbox
     /// Azure Neural TTS over REST. Optional; needs Keychain API key + region.
     case azure
 
     /// Human-readable label for menus.
     public var displayName: String {
         switch self {
-        case .system: return "System Voice"
-        case .kokoro: return "Kokoro (Local)"
-        case .azure:  return "Azure Neural"
+        case .system:     return "System Voice"
+        case .kokoro:     return "Kokoro (Local)"
+        case .chatterbox: return "Chatterbox (Local)"
+        case .azure:      return "Azure Neural"
         }
     }
 }
@@ -327,6 +332,8 @@ public enum SettingsKey {
     public static let lineHeight        = "readflow.lineHeight"        // Double (multiplier)
     public static let letterSpacing     = "readflow.letterSpacing"     // Double (pt)
     public static let kokoroBaseURL     = "readflow.kokoroBaseURL"     // String (default http://localhost:8880)
+    public static let chatterboxBaseURL = "readflow.chatterboxBaseURL" // String (default http://192.168.4.176:8004)
+    public static let chatterboxVoice   = "readflow.chatterboxVoice"   // String (predefined voice, e.g. "Abigail")
 
     /// Keychain service + account under which the Azure subscription key is
     /// stored. The key is NEVER written to UserDefaults or logged.

@@ -40,6 +40,12 @@ final class Settings: ObservableObject {
     /// Default Kokoro endpoint when none is stored.
     private static let defaultKokoroBaseURL = "http://localhost:8880"
 
+    /// Default Chatterbox endpoint when none is stored (the Framerstation GPU box).
+    private static let defaultChatterboxBaseURL = "http://192.168.4.176:8004"
+
+    /// Default Chatterbox predefined voice.
+    private static let defaultChatterboxVoice = "Abigail"
+
     // MARK: - Storage
 
     private let defaults: UserDefaults
@@ -155,6 +161,25 @@ final class Settings: ObservableObject {
         }
     }
 
+    /// Chatterbox base URL string. Empty/whitespace falls back to the default.
+    @Published var chatterboxBaseURL: String {
+        didSet {
+            guard chatterboxBaseURL != oldValue else { return }
+            defaults.set(chatterboxBaseURL, forKey: SettingsKey.chatterboxBaseURL)
+            postSettingsChanged()
+        }
+    }
+
+    /// Chatterbox predefined voice name (e.g. "Abigail"). Stored WITHOUT the
+    /// ".wav" extension; the engine appends it when calling the server.
+    @Published var chatterboxVoice: String {
+        didSet {
+            guard chatterboxVoice != oldValue else { return }
+            defaults.set(chatterboxVoice, forKey: SettingsKey.chatterboxVoice)
+            postSettingsChanged()
+        }
+    }
+
     // MARK: - Init
 
     /// Designated initializer. Defaults to `.standard`; injectable for tests.
@@ -174,7 +199,9 @@ final class Settings: ObservableObject {
             SettingsKey.fontSize:       28.0,
             SettingsKey.lineHeight:     1.4,
             SettingsKey.letterSpacing:  0.5,
-            SettingsKey.kokoroBaseURL:  Self.defaultKokoroBaseURL
+            SettingsKey.kokoroBaseURL:  Self.defaultKokoroBaseURL,
+            SettingsKey.chatterboxBaseURL: Self.defaultChatterboxBaseURL,
+            SettingsKey.chatterboxVoice:   Self.defaultChatterboxVoice
         ])
 
         // Hydrate each stored property from defaults. `didSet` does NOT fire
@@ -195,6 +222,12 @@ final class Settings: ObservableObject {
         self.kokoroBaseURL  = storedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? Self.defaultKokoroBaseURL
             : storedURL
+
+        let storedCBURL = defaults.string(forKey: SettingsKey.chatterboxBaseURL) ?? Self.defaultChatterboxBaseURL
+        self.chatterboxBaseURL = storedCBURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultChatterboxBaseURL
+            : storedCBURL
+        self.chatterboxVoice = defaults.string(forKey: SettingsKey.chatterboxVoice) ?? Self.defaultChatterboxVoice
     }
 
     // MARK: - Derived accessors
@@ -208,6 +241,16 @@ final class Settings: ObservableObject {
         }
         // Default is a known-good literal, so this force-unwrap is safe.
         return URL(string: Self.defaultKokoroBaseURL)!
+    }
+
+    /// The Chatterbox base URL as a `URL`, falling back to the default if the
+    /// stored string is empty or unparsable. Convenience for `ChatterboxEngine`.
+    var chatterboxBaseURLValue: URL {
+        let trimmed = chatterboxBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed.isEmpty ? Self.defaultChatterboxBaseURL : trimmed) {
+            return url
+        }
+        return URL(string: Self.defaultChatterboxBaseURL)!
     }
 
     // MARK: - Azure Keychain (the ONLY secret store)

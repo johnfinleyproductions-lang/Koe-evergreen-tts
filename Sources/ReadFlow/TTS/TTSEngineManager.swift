@@ -153,9 +153,10 @@ final class TTSEngineManager {
     /// The currently-selected voice id for `kind`.
     private func voice(for kind: EngineKind) -> String {
         switch kind {
-        case .system: return settings.systemVoiceID
-        case .kokoro: return settings.kokoroVoice
-        case .azure:  return settings.azureVoice
+        case .system:     return settings.systemVoiceID
+        case .kokoro:     return settings.kokoroVoice
+        case .chatterbox: return settings.chatterboxVoice
+        case .azure:      return settings.azureVoice
         }
     }
 
@@ -185,6 +186,10 @@ final class TTSEngineManager {
             let url = URL(string: settings.kokoroBaseURL)
                 ?? URL(string: "http://localhost:8880")!
             return KokoroEngine(baseURL: url, voice: settings.kokoroVoice)
+
+        case .chatterbox:
+            return ChatterboxEngine(baseURL: settings.chatterboxBaseURLValue,
+                                    voice: settings.chatterboxVoice)
 
         case .azure:
             // The key is read from the Keychain on demand via the provider —

@@ -628,9 +628,10 @@ private struct KoePlayerBar: View {
     }
     private var voiceBinding: Binding<String> {
         switch settings.engineKind {
-        case .system: return Binding(get: { settings.systemVoiceID }, set: { settings.systemVoiceID = $0 })
-        case .kokoro: return Binding(get: { settings.kokoroVoice }, set: { settings.kokoroVoice = $0 })
-        case .azure:  return Binding(get: { settings.azureVoice }, set: { settings.azureVoice = $0 })
+        case .system:     return Binding(get: { settings.systemVoiceID }, set: { settings.systemVoiceID = $0 })
+        case .kokoro:     return Binding(get: { settings.kokoroVoice }, set: { settings.kokoroVoice = $0 })
+        case .chatterbox: return Binding(get: { settings.chatterboxVoice }, set: { settings.chatterboxVoice = $0 })
+        case .azure:      return Binding(get: { settings.azureVoice }, set: { settings.azureVoice = $0 })
         }
     }
     private var voiceOptions: [VoiceOption] {
@@ -653,6 +654,16 @@ private struct KoePlayerBar: View {
                 VoiceOption(id: "bf_emma", label: "Emma — UK (F)"),
                 VoiceOption(id: "bm_george", label: "George — UK (M)"),
             ]
+        case .chatterbox:
+            // Predefined Chatterbox Turbo voices (served from the GPU box). Stored
+            // by display name; the engine appends ".wav" when calling the server.
+            return [
+                "Abigail", "Adrian", "Alexander", "Alice", "Austin", "Axel",
+                "Connor", "Cora", "Elena", "Eli", "Emily", "Everett",
+                "Gabriel", "Gianna", "Henry", "Ian", "Jade", "Jeremiah",
+                "Jordan", "Julian", "Layla", "Leonardo", "Michael", "Miles",
+                "Olivia", "Ryan", "Taylor", "Thomas",
+            ].map { VoiceOption(id: $0, label: $0) }
         case .azure:
             return [
                 VoiceOption(id: "en-US-JennyNeural", label: "Jenny (F)"),
@@ -663,7 +674,12 @@ private struct KoePlayerBar: View {
         }
     }
     private var engineShort: String {
-        switch settings.engineKind { case .system: return "System"; case .kokoro: return "Kokoro"; case .azure: return "Azure" }
+        switch settings.engineKind {
+        case .system: return "System"
+        case .kokoro: return "Kokoro"
+        case .chatterbox: return "Chatterbox"
+        case .azure: return "Azure"
+        }
     }
     private var currentVoiceShort: String {
         let id = voiceBinding.wrappedValue
