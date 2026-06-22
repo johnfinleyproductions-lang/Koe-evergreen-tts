@@ -40,10 +40,13 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     private var chunks: [Chunk] = []
     private var results: [Int: Synth] = [:]          // synthesized chunks by index
     private var inFlight: [Int: URLSessionDataTask] = [:]
+    private var failed: Set<Int> = []                 // chunks that failed permanently (skipped)
+    private var retries: [Int: Int] = [:]             // per-chunk retry counts
     private var playIndex = 0                          // chunk currently playing / awaited
     private var generation = 0                         // bumped on stop to drop stale callbacks
     private var startedSpeaking = false
     private static let prefetchAhead = 2
+    private static let maxRetries = 1                  // retry a failed chunk once before skipping
 
     // MARK: Current-chunk playback
     private var player: AVAudioPlayer?
@@ -110,6 +113,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
         chunks = Self.makeChunks(text: text, words: words)
         guard !chunks.isEmpty else { deliverError(.emptyText); return }
+        failed = []; retries = [:]
         KoeLog.d("kokoro: speak — \(chunks.count) chunks")
 
         let gen = generation
@@ -135,6 +139,8 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         inFlight = [:]
         results = [:]
         chunks = []
+        failed = []
+        retries = [:]
         playIndex = 0
         startedSpeaking = false
 
@@ -182,31 +188,60 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
     private func handleChunkResponse(_ i: Int, data: Data?, httpStatus: Int?, hasResponse: Bool,
                                      errorInfo: (code: Int, message: String)?, words: [Word], gen: Int) {
+        // Per-chunk failure: retry once, else skip — NEVER kill the whole read.
         if let errorInfo {
             if errorInfo.code == NSURLErrorCancelled { return }
-            deliverError(.engineUnavailable(.kokoro, underlying: friendlyURLError(code: errorInfo.code, fallback: errorInfo.message)))
-            return
+            failChunk(i, gen: gen, detail: friendlyURLError(code: errorInfo.code, fallback: errorInfo.message)); return
         }
-        guard hasResponse, let status = httpStatus else {
-            deliverError(.engineUnavailable(.kokoro, underlying: "No response from server.")); return
-        }
-        guard (200...299).contains(status) else { deliverError(.badResponse(.kokoro, detail: "HTTP \(status)")); return }
-        guard let data, !data.isEmpty else { deliverError(.badResponse(.kokoro, detail: "Empty response body.")); return }
+        guard hasResponse, let status = httpStatus else { failChunk(i, gen: gen, detail: "no response"); return }
+        guard (200...299).contains(status) else { failChunk(i, gen: gen, detail: "HTTP \(status)"); return }
+        guard let data, !data.isEmpty else { failChunk(i, gen: gen, detail: "empty body"); return }
 
         let decoded: DecodedPayload
         do { decoded = try parsePayload(data) }
-        catch let e as TTSError { deliverError(e); return }
-        catch { deliverError(.badResponse(.kokoro, detail: "Malformed JSON payload.")); return }
+        catch { failChunk(i, gen: gen, detail: "bad payload"); return }
 
         guard let audioData = Data(base64Encoded: decoded.audioBase64) else {
-            deliverError(.badResponse(.kokoro, detail: "Audio was not valid base64.")); return
+            failChunk(i, gen: gen, detail: "bad base64 audio"); return
         }
         let aligned = alignTimestamps(decoded.words, to: words)
         results[i] = Synth(audio: audioData, timestamps: aligned)
         KoeLog.d("kokoro: chunk \(i) READY (ts=\(aligned.count)) playIndex=\(playIndex) player=\(player != nil)")
 
         // If this is the chunk we're waiting to play, start it now.
-        if i == playIndex && player == nil { beginPlay(playIndex, gen: gen) }
+        if i == playIndex && player == nil { playOrAdvance(gen: gen) }
+    }
+
+    /// A chunk failed to synthesize. Retry once; if it still fails, mark it as
+    /// permanently failed and skip past it (only the rest of the article matters).
+    private func failChunk(_ i: Int, gen: Int, detail: String) {
+        guard gen == generation else { return }
+        let attempts = retries[i] ?? 0
+        if attempts < Self.maxRetries {
+            retries[i] = attempts + 1
+            KoeLog.d("kokoro: chunk \(i) failed (\(detail)) — retry \(attempts + 1)")
+            request(i, gen: gen)
+            return
+        }
+        KoeLog.d("kokoro: chunk \(i) PERMANENTLY failed (\(detail)) — skipping")
+        failed.insert(i)
+        inFlight[i] = nil
+        if i == playIndex && player == nil { playOrAdvance(gen: gen) }
+    }
+
+    /// Start the next playable chunk: play it if synthesized, skip it if failed,
+    /// fetch+wait if not ready yet, or end the read once past the last chunk.
+    private func playOrAdvance(gen: Int) {
+        guard gen == generation, player == nil else { return }
+        while playIndex < chunks.count {
+            if results[playIndex] != nil { beginPlay(playIndex, gen: gen); return }
+            if failed.contains(playIndex) { KoeLog.d("kokoro: skip failed chunk \(playIndex)"); playIndex += 1; continue }
+            request(playIndex, gen: gen)   // not ready — fetch; we'll be called again on arrival
+            return
+        }
+        // Past the last chunk.
+        if startedSpeaking { KoeLog.d("kokoro: done (\(failed.count) chunk(s) skipped)"); finishAll() }
+        else { KoeLog.d("kokoro: every chunk failed"); deliverError(.engineUnavailable(.kokoro, underlying: "Couldn't synthesize the text.")) }
     }
 
     // MARK: - Playback of a chunk
@@ -217,14 +252,14 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("readflow-kokoro-\(UUID().uuidString).wav")
         do { try result.audio.write(to: url, options: .atomic) }
-        catch { deliverError(.audioPlaybackFailed(detail: "Couldn't stage audio: \(error.localizedDescription)")); return }
+        catch { skipCurrentChunk(gen: gen, detail: "stage failed"); return }
         tempAudioURL = url
 
         let newPlayer: AVAudioPlayer
         do { newPlayer = try AVAudioPlayer(contentsOf: url) }
         catch {
             try? FileManager.default.removeItem(at: url); tempAudioURL = nil
-            deliverError(.audioPlaybackFailed(detail: error.localizedDescription)); return
+            skipCurrentChunk(gen: gen, detail: "player init failed"); return
         }
         newPlayer.delegate = self
         newPlayer.enableRate = true
@@ -232,7 +267,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         newPlayer.prepareToPlay()
         guard newPlayer.play() else {
             try? FileManager.default.removeItem(at: url); tempAudioURL = nil
-            deliverError(.audioPlaybackFailed(detail: "AVAudioPlayer refused to start.")); return
+            skipCurrentChunk(gen: gen, detail: "play refused"); return
         }
 
         player = newPlayer
@@ -270,17 +305,17 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         let playerID = ObjectIdentifier(player)
         DispatchQueue.main.async { [weak self] in
             guard let self, let current = self.player, ObjectIdentifier(current) == playerID else { return }
-            if flag { self.advanceToNextChunk() }
-            else { self.deliverError(.audioPlaybackFailed(detail: "Playback ended unexpectedly.")) }
+            // Whether it ended cleanly or not, move on to the next chunk rather
+            // than aborting the whole read.
+            self.advanceToNextChunk()
         }
     }
 
     func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        let detail = error?.localizedDescription ?? "Audio decode error."
         let playerID = ObjectIdentifier(player)
         DispatchQueue.main.async { [weak self] in
             guard let self, let current = self.player, ObjectIdentifier(current) == playerID else { return }
-            self.deliverError(.audioPlaybackFailed(detail: detail))
+            self.skipCurrentChunk(gen: self.generation, detail: "decode error")
         }
     }
 
@@ -297,14 +332,24 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
         let gen = generation
         playIndex += 1
-        if playIndex >= chunks.count { KoeLog.d("kokoro: all \(chunks.count) chunks done"); finishAll(); return }
+        KoeLog.d("kokoro: advance -> chunk \(playIndex)")
+        playOrAdvance(gen: gen)   // plays, skips failed, waits, or finishes
+    }
 
-        KoeLog.d("kokoro: advance -> chunk \(playIndex) hasResult=\(results[playIndex] != nil) inflight=\(inFlight[playIndex] != nil)")
-        if results[playIndex] != nil {
-            beginPlay(playIndex, gen: gen)               // next chunk already synthesized
-        } else {
-            request(playIndex, gen: gen)                 // not ready — fetch; beginPlay fires on arrival
-        }
+    /// A chunk that was ALREADY synthesized failed at the playback stage (rare:
+    /// temp write / AVAudioPlayer init). Drop it and move on — no retry (the
+    /// audio decoded fine on the server; re-fetching won't help a local issue).
+    private func skipCurrentChunk(gen: Int, detail: String) {
+        guard gen == generation else { return }
+        KoeLog.d("kokoro: skip chunk \(playIndex) at playback (\(detail))")
+        failed.insert(playIndex)
+        results[playIndex] = nil
+        wordTimer?.invalidate(); wordTimer = nil
+        player?.delegate = nil; player?.stop(); player = nil
+        if let url = tempAudioURL { try? FileManager.default.removeItem(at: url); tempAudioURL = nil }
+        timestamps = []; nextTimestamp = 0
+        playIndex += 1
+        playOrAdvance(gen: gen)
     }
 
     private func finishAll() {
