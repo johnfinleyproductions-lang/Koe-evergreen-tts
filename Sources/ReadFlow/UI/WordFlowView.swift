@@ -311,87 +311,153 @@ private struct KoeReadingView: View {
 
 private struct KoeCaptureView: View {
     @ObservedObject var model: ReaderHUDModel
-    var palette: KoePalette { model.palette }
+    private var palette: KoePalette { model.palette }   // app chrome (dark/light)
+    private let page = KoePalette.light                  // the document is ALWAYS cream paper
 
     var body: some View {
         ZStack {
             palette.readerBg
             VStack(spacing: 0) {
-                // faux document titlebar
-                HStack(spacing: 7) {
-                    Circle().fill(Color(hex: 0xC8836F)).frame(width: 11, height: 11)
-                    Circle().fill(Color(hex: 0xD8BD7E)).frame(width: 11, height: 11)
-                    Circle().fill(Color(hex: 0x9FB083)).frame(width: 11, height: 11)
-                    Text(model.sourceLabel)
-                        .font(KoeFont.mono(12)).foregroundStyle(palette.ink3)
-                        .padding(.leading, 6)
-                    Spacer()
-                    Text(model.words.isEmpty ? "no selection" : "\(model.words.count) words")
-                        .font(KoeFont.mono(12)).foregroundStyle(palette.mute)
-                }
-                .padding(.horizontal, 18).padding(.vertical, 11)
-                .background(palette.readerBar)
-                .overlay(Rectangle().fill(palette.line).frame(height: 1), alignment: .bottom)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if model.words.isEmpty {
-                            Text("Select text in any app and press ⌥R, or open a PDF.\nIt lands here, and Koe reads it aloud.")
-                                .font(KoeFont.mincho(16))
-                                .foregroundStyle(palette.faint)
-                                .lineSpacing(8)
-                        } else {
-                            KoeWordColumn(model: model, maxWidth: 560)
-                            // floating Listen chip
-                            ListenChip(model: model)
-                        }
+                docChrome
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        pageView
+                            .padding(.vertical, 34)
+                            .frame(maxWidth: .infinity)
                     }
-                    .padding(54)
-                    .frame(maxWidth: 620, alignment: .leading)
-                    .background(palette.s0)
-                    .overlay(Rectangle().fill(palette.line).frame(width: 1), alignment: .trailing)
-                    .shadow(color: Color(hex: 0x281E0F, alpha: 0.30), radius: 24, y: 16)
-                    .padding(.vertical, 34)
-                    .frame(maxWidth: .infinity)
+                    .onChange(of: model.currentIndex) { idx in
+                        guard let idx else { return }
+                        withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(idx, anchor: .center) }
+                    }
                 }
             }
         }
     }
-}
 
-private struct ListenChip: View {
-    @ObservedObject var model: ReaderHUDModel
-    var palette: KoePalette { model.palette }
+    // Faux PDF window chrome
+    private var docChrome: some View {
+        HStack(spacing: 7) {
+            Circle().fill(Color(hex: 0xC8836F)).frame(width: 11, height: 11)
+            Circle().fill(Color(hex: 0xD8BD7E)).frame(width: 11, height: 11)
+            Circle().fill(Color(hex: 0x9FB083)).frame(width: 11, height: 11)
+            Text(model.sourceLabel).font(KoeFont.mono(12)).foregroundStyle(palette.ink3).padding(.leading, 6)
+            Spacer()
+            Text(model.words.isEmpty ? "no selection" : "\(model.words.count) words")
+                .font(KoeFont.mono(12)).foregroundStyle(palette.mute)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 11)
+        .background(palette.readerBar)
+        .overlay(Rectangle().fill(palette.line).frame(height: 1), alignment: .bottom)
+    }
 
-    var body: some View {
+    // The cream document page (always light)
+    private var pageView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if model.words.isEmpty {
+                Text("Select text in any app and press ⌥R (or use the browser extension), and it lands here for Koe to read aloud — with the words highlighting as it goes.")
+                    .font(KoeFont.mincho(16)).foregroundStyle(page.faint).lineSpacing(8)
+            } else {
+                Text(model.title).font(KoeFont.mincho(25, bold: true)).foregroundStyle(page.ink)
+                    .padding(.bottom, 6)
+                Text("\(model.sourceLabel) · captured").font(KoeFont.mono(11)).foregroundStyle(page.mute)
+                    .padding(.bottom, 24)
+                selectionBox
+                captureChip.padding(.top, 16)
+            }
+        }
+        .padding(.horizontal, 58).padding(.vertical, 54)
+        .frame(width: 620, alignment: .leading)
+        .background(page.s0)
+        .overlay(Rectangle().stroke(page.line, lineWidth: 1))
+        .shadow(color: Color(hex: 0x281E0F, alpha: 0.5), radius: 30, y: 20)
+    }
+
+    // The highlighted selection (rose-tinted box; current word highlights live)
+    private var selectionBox: some View {
+        WrappingHStack(horizontalSpacing: 6, verticalSpacing: 10) {
+            ForEach(model.words, id: \.index) { w in
+                KoeWordChip(text: w.text,
+                            position: position(w.index),
+                            font: KoeFont.mincho(CGFloat(model.fontSize)),
+                            letterSpacing: CGFloat(model.letterSpacing),
+                            palette: page)
+                    .id(w.index)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 5).fill(model.highlightOn ? page.selectionFill : .clear))
+        .overlay(RoundedRectangle(cornerRadius: 5)
+            .stroke(model.highlightOn ? Color(hex: 0xC0432D, alpha: 0.30) : .clear, lineWidth: 1))
+    }
+
+    // Listen · Highlight · Add to canvas · Save to board
+    private var captureChip: some View {
         HStack(spacing: 9) {
             Button { model.onTogglePlayPause?() } label: {
                 HStack(spacing: 8) {
                     Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 12))
-                    Text(model.isPlaying ? "Pause" : "Listen").font(KoeFont.gothic(12.5, .bold))
+                    Text("Listen").font(KoeFont.gothic(12.5, .bold))
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 13).padding(.vertical, 8)
-                .background(Capsule().fill(palette.shu))
+                .foregroundStyle(.white).padding(.horizontal, 13).padding(.vertical, 8)
+                .background(Capsule().fill(page.shu))
             }
             .buttonStyle(.plain)
 
+            Rectangle().fill(page.line).frame(width: 1, height: 22)
+
             Button { model.highlightOn.toggle() } label: {
                 HStack(spacing: 7) {
-                    RoundedRectangle(cornerRadius: 3).fill(palette.shu).frame(width: 13, height: 13)
+                    RoundedRectangle(cornerRadius: 3).fill(page.shu).frame(width: 13, height: 13)
                     Text("Highlight").font(KoeFont.gothic(12, .medium))
                 }
-                .foregroundStyle(model.highlightOn ? Color(hex: 0xA3361F) : palette.soft)
+                .foregroundStyle(model.highlightOn ? Color(hex: 0xA3361F) : page.soft)
                 .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(Capsule().fill(model.highlightOn ? palette.tintShu : palette.s3))
-                .overlay(Capsule().stroke(model.highlightOn ? Color(hex: 0xD98C7A) : palette.line, lineWidth: 1))
+                .background(Capsule().fill(model.highlightOn ? page.tintShu : page.s3))
+                .overlay(Capsule().stroke(model.highlightOn ? Color(hex: 0xD98C7A) : page.line, lineWidth: 1))
             }
             .buttonStyle(.plain)
+
+            Button { addToCanvas() } label: {
+                HStack(spacing: 7) { Text("⌗"); Text("Add to canvas").font(KoeFont.gothic(12, .medium)) }
+                    .foregroundStyle(page.ink3).padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Capsule().fill(page.s3)).overlay(Capsule().stroke(page.line, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                ForEach(BoardStore.shared.boards) { b in Button(b.name) { saveToBoard(b.id) } }
+                Divider()
+                Button("New board…") { let id = BoardStore.shared.addBoard(); saveToBoard(id); model.koeView = .boards }
+            } label: {
+                HStack(spacing: 7) { Text("▤"); Text("Save to board").font(KoeFont.gothic(12, .medium)); Image(systemName: "chevron.down").font(.system(size: 8)) }
+                    .foregroundStyle(page.ink3).padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Capsule().fill(page.s3)).overlay(Capsule().stroke(page.line, lineWidth: 1))
+            }
+            .menuStyle(.borderlessButton).fixedSize()
         }
         .padding(7)
-        .background(Capsule().fill(palette.s1))
-        .overlay(Capsule().stroke(palette.line, lineWidth: 1))
+        .background(Capsule().fill(page.s1))
+        .overlay(Capsule().stroke(page.line, lineWidth: 1))
         .shadow(color: Color(hex: 0x281E0F, alpha: 0.30), radius: 16, y: 10)
+    }
+
+    private func position(_ index: Int) -> KoeWordChip.Position {
+        guard let cur = model.currentIndex else { return .upcoming }
+        if index == cur { return .current }
+        return index < cur ? .past : .upcoming
+    }
+
+    private func addToCanvas() {
+        let text = model.words.map(\.text).joined(separator: " ")
+        guard !text.isEmpty else { return }
+        CanvasStore.shared.add(text, source: model.title)
+        model.koeView = .canvas
+    }
+    private func saveToBoard(_ id: UUID) {
+        let text = model.words.map(\.text).joined(separator: " ")
+        guard !text.isEmpty else { return }
+        BoardStore.shared.addItem(BoardItem(text: text, source: model.title, kind: "read"), to: id)
     }
 }
 
@@ -414,6 +480,7 @@ private struct KoeSidebar: View {
                 navButton(.read, "The Quiet Hour", "book")
                 navButton(.canvas, "Idea Canvas", "square.grid.2x2")
                 navButton(.boards, "Boards", "tray.full")
+                navButton(.library, "Library", "books.vertical")
             }
 
             Spacer()
@@ -705,6 +772,7 @@ struct KoeRootView: View {
                     case .read:    KoeReadingView(model: model)
                     case .canvas:  KoeCanvasView(model: model)
                     case .boards:  KoeBoardsView(model: model)
+                    case .library: KoeLibraryView(model: model)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

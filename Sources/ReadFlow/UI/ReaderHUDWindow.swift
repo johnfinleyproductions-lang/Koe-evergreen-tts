@@ -110,7 +110,10 @@ final class ReaderHUDWindow {
         model.words = words
         model.currentIndex = nil
         model.state = .preparing
-        model.koeView = .read
+        // Land in Capture — the document page where the selection highlights as
+        // it reads (matches the design). The Quiet Hour view also highlights and
+        // stays reachable from the sidebar.
+        if model.koeView != .read { model.koeView = .capture }
         model.title = derivedTitle(from: words)
         model.elapsed = 0
         model.total = estimatedTotal(wordCount: words.count, rate: settings.rate)
