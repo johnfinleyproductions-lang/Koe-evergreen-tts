@@ -772,7 +772,7 @@ struct KoeRootView: View {
                     case .read:    KoeReadingView(model: model)
                     case .canvas:  KoeCanvasView(model: model)
                     case .boards:  KoeBoardsView(model: model)
-                    case .library: KoeLibraryView(model: model)
+                    case .library: KoeLibraryView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
