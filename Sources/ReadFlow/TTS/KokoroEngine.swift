@@ -35,17 +35,22 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
     // MARK: Chunking
     private struct Chunk { let text: String; let words: [Word] }
-    private struct Synth { let audio: Data; let timestamps: [WordTimestamp] }
+    /// A chunk that's been staged AND its AVAudioPlayer pre-loaded (prepareToPlay),
+    /// so starting it later is instant — no decode hiccup at the chunk boundary.
+    private struct Ready { let player: AVAudioPlayer; let url: URL; let timestamps: [WordTimestamp] }
 
     private var chunks: [Chunk] = []
-    private var results: [Int: Synth] = [:]          // synthesized chunks by index
+    private var ready: [Int: Ready] = [:]             // pre-loaded players by chunk index
     private var inFlight: [Int: URLSessionDataTask] = [:]
     private var failed: Set<Int> = []                 // chunks that failed permanently (skipped)
     private var retries: [Int: Int] = [:]             // per-chunk retry counts
     private var playIndex = 0                          // chunk currently playing / awaited
     private var generation = 0                         // bumped on stop to drop stale callbacks
     private var startedSpeaking = false
-    private static let prefetchAhead = 2
+    // Kokoro on CPU synthesizes ONE request at a time; blasting it concurrently
+    // makes it drop connections. So cap in-flight requests and feed them in order.
+    private static let maxConcurrent = 2               // requests in flight at once
+    private static let maxLead = 5                     // synthesize at most this many chunks ahead
     private static let maxRetries = 1                  // retry a failed chunk once before skipping
 
     // MARK: Current-chunk playback
@@ -81,7 +86,14 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         inFlight.values.forEach { $0.cancel() }
         player?.stop()
         if let url = tempAudioURL { try? FileManager.default.removeItem(at: url) }
+        ready.values.forEach { $0.player.stop(); try? FileManager.default.removeItem(at: $0.url) }
         session.invalidateAndCancel()
+    }
+
+    /// Stop + delete every pre-loaded player and its temp file.
+    private func clearReady() {
+        ready.values.forEach { $0.player.stop(); try? FileManager.default.removeItem(at: $0.url) }
+        ready = [:]
     }
 
     // MARK: prewarm
@@ -120,9 +132,24 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         playIndex = 0
         startedSpeaking = false
         deliverState(.preparing)
+        pump(gen: gen)   // begin feeding the server, in order, a couple at a time
+    }
 
-        // Kick off the first couple of chunks; the first is small for a fast start.
-        for i in 0..<min(1 + Self.prefetchAhead, chunks.count) { request(i, gen: gen) }
+    /// Feed the server the next needed chunks IN ORDER, up to `maxConcurrent` in
+    /// flight and `maxLead` chunks ahead of what's playing. This keeps Kokoro busy
+    /// without overwhelming it (which causes dropped connections + stalls).
+    private func pump(gen: Int) {
+        guard gen == generation else { return }
+        // Start AT the awaited chunk when nothing is playing, or AFTER the playing
+        // chunk otherwise — never re-request a chunk that's already playing (its
+        // `ready` slot is consumed, which would otherwise look "missing").
+        let start = playIndex + (player != nil ? 1 : 0)
+        let upper = min(chunks.count, playIndex + Self.maxLead + 1)
+        guard start < upper else { return }
+        while inFlight.count < Self.maxConcurrent {
+            guard let i = (start..<upper).first(where: { ready[$0] == nil && !failed.contains($0) && inFlight[$0] == nil }) else { break }
+            request(i, gen: gen)
+        }
     }
 
     // MARK: live rate
@@ -137,7 +164,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         wordTimer?.invalidate(); wordTimer = nil
         inFlight.values.forEach { $0.cancel() }
         inFlight = [:]
-        results = [:]
+        clearReady()
         chunks = []
         failed = []
         retries = [:]
@@ -158,7 +185,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
     private func request(_ i: Int, gen: Int) {
         guard i >= 0, i < chunks.count else { return }
-        guard inFlight[i] == nil, results[i] == nil else { return }   // no dup work
+        guard inFlight[i] == nil, ready[i] == nil else { return }   // no dup work
 
         guard let body = makeRequestBody(text: chunks[i].text) else {
             deliverError(.other("Couldn't encode the Kokoro request.")); return
@@ -205,11 +232,30 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
             failChunk(i, gen: gen, detail: "bad base64 audio"); return
         }
         let aligned = alignTimestamps(decoded.words, to: words)
-        results[i] = Synth(audio: audioData, timestamps: aligned)
+        // Stage + pre-load the player NOW so the eventual handoff is instant.
+        guard let prepared = prepare(audio: audioData, timestamps: aligned) else {
+            failChunk(i, gen: gen, detail: "prepare failed"); return
+        }
+        ready[i] = prepared
         KoeLog.d("kokoro: chunk \(i) READY (ts=\(aligned.count)) playIndex=\(playIndex) player=\(player != nil)")
 
         // If this is the chunk we're waiting to play, start it now.
         if i == playIndex && player == nil { playOrAdvance(gen: gen) }
+        pump(gen: gen)   // keep feeding the next chunks in order
+    }
+
+    /// Write the audio to a temp file and pre-load an AVAudioPlayer (decode/buffer
+    /// up front) so `.play()` later starts with no gap.
+    private func prepare(audio: Data, timestamps: [WordTimestamp]) -> Ready? {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("readflow-kokoro-\(UUID().uuidString).wav")
+        do { try audio.write(to: url, options: .atomic) } catch { return nil }
+        guard let p = try? AVAudioPlayer(contentsOf: url) else {
+            try? FileManager.default.removeItem(at: url); return nil
+        }
+        p.enableRate = true
+        p.prepareToPlay()
+        return Ready(player: p, url: url, timestamps: timestamps.sorted { $0.start < $1.start })
     }
 
     /// A chunk failed to synthesize. Retry once; if it still fails, mark it as
@@ -227,6 +273,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         failed.insert(i)
         inFlight[i] = nil
         if i == playIndex && player == nil { playOrAdvance(gen: gen) }
+        pump(gen: gen)
     }
 
     /// Start the next playable chunk: play it if synthesized, skip it if failed,
@@ -234,7 +281,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     private func playOrAdvance(gen: Int) {
         guard gen == generation, player == nil else { return }
         while playIndex < chunks.count {
-            if results[playIndex] != nil { beginPlay(playIndex, gen: gen); return }
+            if ready[playIndex] != nil { beginPlay(playIndex, gen: gen); return }
             if failed.contains(playIndex) { KoeLog.d("kokoro: skip failed chunk \(playIndex)"); playIndex += 1; continue }
             request(playIndex, gen: gen)   // not ready — fetch; we'll be called again on arrival
             return
@@ -247,40 +294,27 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     // MARK: - Playback of a chunk
 
     private func beginPlay(_ i: Int, gen: Int) {
-        guard gen == generation, let result = results[i] else { return }
+        guard gen == generation, let r = ready[i] else { return }
+        ready[i] = nil
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("readflow-kokoro-\(UUID().uuidString).wav")
-        do { try result.audio.write(to: url, options: .atomic) }
-        catch { skipCurrentChunk(gen: gen, detail: "stage failed"); return }
-        tempAudioURL = url
-
-        let newPlayer: AVAudioPlayer
-        do { newPlayer = try AVAudioPlayer(contentsOf: url) }
-        catch {
-            try? FileManager.default.removeItem(at: url); tempAudioURL = nil
-            skipCurrentChunk(gen: gen, detail: "player init failed"); return
-        }
-        newPlayer.delegate = self
-        newPlayer.enableRate = true
-        newPlayer.rate = Float(min(max(currentRate, 0.5), 2.0))
-        newPlayer.prepareToPlay()
-        guard newPlayer.play() else {
-            try? FileManager.default.removeItem(at: url); tempAudioURL = nil
+        let p = r.player
+        p.delegate = self
+        p.rate = Float(min(max(currentRate, 0.5), 2.0))
+        guard p.play() else {   // already prepared — this starts with no decode gap
+            try? FileManager.default.removeItem(at: r.url)
             skipCurrentChunk(gen: gen, detail: "play refused"); return
         }
 
-        player = newPlayer
-        timestamps = result.timestamps.sorted { $0.start < $1.start }
+        player = p
+        tempAudioURL = r.url
+        timestamps = r.timestamps
         nextTimestamp = 0
-        results[i] = nil   // free the audio data once staged
 
         if !startedSpeaking { deliverState(.speaking); startedSpeaking = true }
         startWordTimer()
-        KoeLog.d("kokoro: PLAY chunk \(i) (dur=\(String(format: "%.1f", player?.duration ?? 0))s)")
+        KoeLog.d("kokoro: PLAY chunk \(i) (dur=\(String(format: "%.1f", p.duration))s)")
 
-        // Keep the pipeline full.
-        for j in (i + 1)...(i + Self.prefetchAhead) where j < chunks.count { request(j, gen: gen) }
+        pump(gen: gen)   // window moved forward — feed the next chunks
     }
 
     private func startWordTimer() {
@@ -343,7 +377,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         guard gen == generation else { return }
         KoeLog.d("kokoro: skip chunk \(playIndex) at playback (\(detail))")
         failed.insert(playIndex)
-        results[playIndex] = nil
+        if let r = ready[playIndex] { r.player.stop(); try? FileManager.default.removeItem(at: r.url); ready[playIndex] = nil }
         wordTimer?.invalidate(); wordTimer = nil
         player?.delegate = nil; player?.stop(); player = nil
         if let url = tempAudioURL { try? FileManager.default.removeItem(at: url); tempAudioURL = nil }
@@ -357,7 +391,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         wordTimer?.invalidate(); wordTimer = nil
         player?.delegate = nil; player?.stop(); player = nil
         if let url = tempAudioURL { try? FileManager.default.removeItem(at: url); tempAudioURL = nil }
-        chunks = []; results = [:]; timestamps = []; nextTimestamp = 0
+        chunks = []; clearReady(); timestamps = []; nextTimestamp = 0
         deliverState(.finished)
         finish?()
         onWord = nil; onStateChange = nil; onFinish = nil; onError = nil
@@ -380,7 +414,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         generation &+= 1
         wordTimer?.invalidate(); wordTimer = nil
         inFlight.values.forEach { $0.cancel() }; inFlight = [:]
-        results = [:]; chunks = []
+        clearReady(); chunks = []
         player?.delegate = nil; player?.stop(); player = nil
         if let url = tempAudioURL { try? FileManager.default.removeItem(at: url); tempAudioURL = nil }
         timestamps = []; nextTimestamp = 0
@@ -397,7 +431,17 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     private static func makeChunks(text: String, words: [Word]) -> [Chunk] {
         var chunks: [Chunk] = []
         var current: [Word] = []
-        func target(_ chunkIndex: Int) -> Int { chunkIndex == 0 ? 12 : 60 }
+        // Ramp chunk sizes: the first is small for a fast start, but each early
+        // chunk must play LONG ENOUGH to cover the next one synthesizing (Kokoro on
+        // CPU needs ~2-3s per request), so we ramp up rather than start tiny — that
+        // keeps the buffer ahead and avoids mid-playback stalls. Later chunks are
+        // large (synthesis is several times faster than playback once warm).
+        // Kokoro on CPU synthesizes at roughly real time, so each chunk's playback
+        // must be ≥ the NEXT chunk's synthesis. We ramp gently from a small first
+        // chunk (fast start) so the buffer keeps growing instead of stalling.
+        func target(_ chunkIndex: Int) -> Int {
+            switch chunkIndex { case 0: return 14; case 1: return 22; case 2: return 34; case 3: return 52; default: return 78 }
+        }
 
         for w in words {
             current.append(w)
