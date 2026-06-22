@@ -1,0 +1,19 @@
+# Kokoro-FastAPI for NVIDIA Blackwell GPUs (RTX 50-series, compute capability
+# sm_120 — e.g. the RTX 5060 Ti).
+#
+# The upstream GPU image ships PyTorch built for CUDA 12.6, which has NO Blackwell
+# kernels, so the model crashes on load with:
+#   "CUDA error: no kernel image is available for execution on the device"
+# This image swaps in PyTorch built for CUDA 12.8 (which includes sm_120), as root
+# so it can overwrite the baked virtualenv.
+#
+# Build + run on the GPU worker box (Framerstation):
+#   docker build -f Dockerfile.blackwell -t koe-kokoro-blackwell .
+#   docker run -d --name koe-kokoro --restart unless-stopped --gpus all \
+#       -p 8880:8880 koe-kokoro-blackwell
+# Verify:  curl http://<box-ip>:8880/health   ->  {"status":"healthy"}
+# Roll back: docker rm -f koe-kokoro
+FROM ghcr.io/remsky/kokoro-fastapi-gpu:latest
+USER root
+RUN VIRTUAL_ENV=/app/.venv uv pip install --reinstall \
+    --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
