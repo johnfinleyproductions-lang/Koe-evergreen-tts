@@ -8,14 +8,25 @@ voice, same word-timing, just fast.
 This is the Evergreen pattern: run TTS as a service on a worker box, point the Mac
 app at it over the LAN.
 
-## Current setup (2026-06)
-- **Host:** Framerstation (`192.168.4.176`, ssh alias `frame`) — RTX 5060 Ti, 16 GB.
+## Current setup (2026-06-23)
+- **Host:** m90t (`192.168.4.200`, ssh alias `think`) — RTX 5060 Ti, 16 GB.
 - **Image:** `koe-kokoro-blackwell` (built from `Dockerfile.blackwell` — the stock
-  GPU image needed CUDA 12.8 torch for the Blackwell card).
+  GPU image needed CUDA 12.8 torch for the Blackwell card). The image was
+  `docker save | ssh | docker load`-streamed over from Framerstation rather than
+  rebuilt, so it's byte-identical.
 - **Container:** `koe-kokoro`, `--restart unless-stopped`, port `8880`.
 - **Koe points at it via** the `readflow.kokoroBaseURL` setting:
-  `defaults write com.readflow.app readflow.kokoroBaseURL "http://192.168.4.176:8880"`
+  `defaults write com.readflow.app readflow.kokoroBaseURL "http://192.168.4.200:8880"`
   then relaunch Koe. (Default is `http://localhost:8880`.)
+
+### GPU split with Chatterbox
+Kokoro (~0.85 GB) shares m90t with the resident **VoxStation** voice service
+(~9.6 GB) — together ~10.5 GB / 16 GB, comfortable. The **Chatterbox** engine has
+a much larger ~4.8 GB working set, so it lives on **Framerstation**
+(`192.168.4.176:8004`, 93% idle GPU) instead — putting both on m90t pushed it to
+94% VRAM. Chatterbox's image/repo still exist on m90t (`~/chatterbox-server`,
+`compose down`) as a dormant fallback. Framerstation is also the rebuild source if
+m90t's Kokoro image is ever lost.
 
 ## Stand it up on a GPU box
 ```bash
