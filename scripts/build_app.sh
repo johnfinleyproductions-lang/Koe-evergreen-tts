@@ -98,7 +98,9 @@ cat > "${INFO_PLIST}" <<PLIST
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>${APP_NAME}</string>
+    <string>Koe</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -187,10 +189,24 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 3b. Refresh the installed /Applications copy (if present)
+# ---------------------------------------------------------------------------
+# Once Koe lives in /Applications (the user-facing home + Login Item target),
+# keep it current on every rebuild IN PLACE at the same path, so the stable
+# "Koe Signing" identity + path keep the Accessibility grant intact.
+INSTALLED_APP="/Applications/Koe.app"
+if [[ -d "${INSTALLED_APP}" ]]; then
+    rm -rf "${INSTALLED_APP}"
+    cp -R "${APP_BUNDLE}" "${INSTALLED_APP}"
+    ok "Refreshed installed copy: ${INSTALLED_APP}"
+fi
+
+# ---------------------------------------------------------------------------
 # 4. Next steps
 # ---------------------------------------------------------------------------
 bold "[4/4] Done."
 ok "Built app: ${APP_BUNDLE}"
+if [[ -d "${INSTALLED_APP}" ]]; then ok "Installed app: ${INSTALLED_APP} (Koe)"; fi
 echo
 bold "Launch it:"
 echo "    open \"${APP_BUNDLE}\""
