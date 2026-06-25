@@ -21,18 +21,26 @@ import AppKit
 import SwiftUI
 
 /// Temporary file-based debug log (the unified log doesn't capture this app's
-/// NSLog under SwiftPM/CLT). Writes to /tmp/koe-debug.log so issues can be traced
-/// without screen access. Logs lengths/flags only — never the user's text.
+/// NSLog under SwiftPM/CLT). DEBUG-only: in release builds every call is a no-op,
+/// so nothing is written and there's no I/O on the playback/capture hot paths.
+/// In DEBUG it writes to the per-user temp dir (not world-shared /tmp). Logs
+/// lengths/flags only — never the user's text.
 enum KoeLog {
-    static let path = "/tmp/koe-debug.log"
-    static func reset() { try? "".write(toFile: path, atomically: true, encoding: .utf8) }
-    static func d(_ msg: String) {
+    static let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("koe-debug.log")
+    static func reset() {
+        #if DEBUG
+        try? "".write(toFile: path, atomically: true, encoding: .utf8)
+        #endif
+    }
+    @inline(__always) static func d(_ msg: String) {
+        #if DEBUG
         let line = "[\(Date())] \(msg)\n"
         if let h = FileHandle(forWritingAtPath: path) {
             h.seekToEndOfFile(); if let data = line.data(using: .utf8) { h.write(data) }; try? h.close()
         } else {
             try? line.write(toFile: path, atomically: true, encoding: .utf8)
         }
+        #endif
     }
 }
 

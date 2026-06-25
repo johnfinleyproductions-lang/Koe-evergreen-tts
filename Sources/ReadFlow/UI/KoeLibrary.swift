@@ -382,7 +382,11 @@ struct KoeLibraryView: View {
                     guard let img = obj as? NSImage, let tiff = img.tiffRepresentation,
                           let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else { return }
                     let name = UUID().uuidString + ".png"
-                    try? png.write(to: LibraryStore.imageURL(name))
+                    // Only register the image if the file actually landed on disk —
+                    // a failed write would otherwise leave a phantom gallery entry
+                    // pointing at nothing (invisible, undeletable).
+                    do { try png.write(to: LibraryStore.imageURL(name)) }
+                    catch { KoeLog.d("library: image write failed: \(error.localizedDescription)"); return }
                     Task { @MainActor in self.store.addImage(name, toNotebook: nbID) }
                 }
             } else if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
@@ -393,7 +397,9 @@ struct KoeLibraryView: View {
                     guard let url = src, NSImage(contentsOf: url) != nil else { return }
                     let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension
                     let name = UUID().uuidString + "." + ext
-                    try? FileManager.default.copyItem(at: url, to: LibraryStore.imageURL(name))
+                    // Only register if the copy succeeded (see note above).
+                    do { try FileManager.default.copyItem(at: url, to: LibraryStore.imageURL(name)) }
+                    catch { KoeLog.d("library: image copy failed: \(error.localizedDescription)"); return }
                     Task { @MainActor in self.store.addImage(name, toNotebook: nbID) }
                 }
             }

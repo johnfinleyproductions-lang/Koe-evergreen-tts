@@ -584,6 +584,16 @@ final class AzureNeuralEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unch
         var bi = 0   // boundary cursor
         while wi < m && bi < n {
             let targetNorm = Self.normalizeForMatch(words[wi].text)
+            // Punctuation-only shared token (normalizes to empty): Azure emits no
+            // boundary for it, so give it a zero-width timestamp at the current
+            // position WITHOUT consuming a boundary — otherwise every following word
+            // in the stream would highlight one boundary early.
+            if targetNorm.isEmpty {
+                let at = result.last?.end ?? startSeconds(sorted[bi])
+                result.append(WordTimestamp(wordIndex: wi, start: at, end: at))
+                wi += 1
+                continue
+            }
             // The shared word's first contributing boundary's start time.
             let wordStart = startSeconds(sorted[bi])
             var wordEnd = endSeconds(forIndex: bi)

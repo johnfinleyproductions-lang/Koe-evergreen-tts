@@ -196,9 +196,21 @@ fi
 # "Koe Signing" identity + path keep the Accessibility grant intact.
 INSTALLED_APP="/Applications/Koe.app"
 if [[ -d "${INSTALLED_APP}" ]]; then
-    rm -rf "${INSTALLED_APP}"
-    cp -R "${APP_BUNDLE}" "${INSTALLED_APP}"
-    ok "Refreshed installed copy: ${INSTALLED_APP}"
+    # Quit any running copy so we never overwrite a live binary, then swap
+    # atomically: stage the new bundle beside the target and `mv` it over (a
+    # same-filesystem rename), instead of `rm -rf`'ing the live app in place.
+    osascript -e 'quit app "Koe"' >/dev/null 2>&1 || true
+    killall Koe >/dev/null 2>&1 || true
+    STAGE="$(dirname "${INSTALLED_APP}")/.Koe.app.new.$$"
+    rm -rf "${STAGE}"
+    if cp -R "${APP_BUNDLE}" "${STAGE}"; then
+        rm -rf "${INSTALLED_APP}"
+        mv "${STAGE}" "${INSTALLED_APP}"
+        ok "Refreshed installed copy: ${INSTALLED_APP}"
+    else
+        rm -rf "${STAGE}"
+        warn "Could not refresh ${INSTALLED_APP}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

@@ -98,7 +98,9 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
     // MARK: prewarm
     func prewarm() {
-        var request = URLRequest(url: captionedSpeechEndpoint())
+        // Ping /health (a real GET endpoint) rather than the POST-only synthesis
+        // route — opens the connection / wakes the server without a 405.
+        var request = URLRequest(url: baseURL.appendingPathComponent("health"))
         request.httpMethod = "GET"
         request.timeoutInterval = 5
         session.dataTask(with: request) { _, _, _ in }.resume()
@@ -514,6 +516,18 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         var wi = 0, si = 0
         while wi < m && si < n {
             let targetNorm = Self.normalizeForMatch(words[wi].text)
+            // A punctuation-only shared token ("—", "…", a lone quote, an emoji)
+            // normalizes to empty. The server emits no audio boundary for it, so
+            // give it a zero-width timestamp at the current position WITHOUT
+            // consuming a server word — otherwise this token would eat a real
+            // boundary and every following word in the chunk would highlight one
+            // server-word early (until the next sentence chunk resyncs it).
+            if targetNorm.isEmpty {
+                let at = result.last?.end ?? max(0, serverWords[si].start)
+                result.append(WordTimestamp(wordIndex: words[wi].index, start: at, end: at))
+                wi += 1
+                continue
+            }
             let wordStart = max(0, serverWords[si].start)
             var wordEnd = max(serverWords[si].start, serverWords[si].end)
             var merged = Self.normalizeForMatch(serverWords[si].text)

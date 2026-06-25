@@ -12,7 +12,8 @@ You only need this if you want the **Kokoro** voice engine. The built-in
 You need Docker Desktop installed and running.
 
 ```sh
-cd "/Users/tylerfreund/Desktop/Coding Projects/ReadFlow/kokoro"
+# from the repo root (wherever you cloned ReadFlow):
+cd kokoro
 docker compose up -d
 ```
 

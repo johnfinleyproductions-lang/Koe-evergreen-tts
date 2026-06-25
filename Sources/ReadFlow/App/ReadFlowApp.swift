@@ -190,9 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func presentAccessibilityGuidance() {
         let alert = NSAlert()
-        alert.messageText = "ReadFlow Needs Accessibility Access"
+        alert.messageText = "Koe Needs Accessibility Access"
         alert.informativeText = """
-        To read the text you've selected in other apps, enable ReadFlow under:
+        To read the text you've selected in other apps, enable Koe under:
 
         System Settings → Privacy & Security → Accessibility.
 

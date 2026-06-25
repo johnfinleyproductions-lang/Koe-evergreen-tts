@@ -60,8 +60,16 @@ final class TTSEngineManager {
     /// never spin up a network engine the user hasn't selected.
     private var engineCache: [EngineKind: TTSEngine] = [:]
 
-    /// The engine currently driving (or last driving) playback.
-    private weak var activeEngine: TTSEngine?
+    /// The engine currently driving (or last driving) playback. Held STRONGLY for
+    /// the life of an utterance: an in-app voice/engine change posts
+    /// `.readFlowSettingsChanged`, and `prewarm()` then rebuilds the cached engine
+    /// for that kind (voice is baked at construction), REPLACING `engineCache[kind]`.
+    /// If this were `weak`, replacing the cache entry would drop the last strong
+    /// reference to the engine that's currently playing and `deinit` would cut the
+    /// audio mid-sentence with no terminal callback (leaving `state` stuck at
+    /// `.speaking`). A strong ref keeps the live engine alive until it finishes;
+    /// the new voice takes effect on the next read. Cleared on `stop()`/`windDown()`.
+    private var activeEngine: TTSEngine?
 
     // MARK: - In-flight utterance
 
@@ -302,12 +310,23 @@ final class TTSEngineManager {
                                    failingKind: EngineKind,
                                    text: String,
                                    token: Int) {
-        presentError(error, from: failingKind)
-
         if failingKind != .system {
+            // A non-System engine failed; we auto-fall-back to System below so the
+            // user still hears their text. For TRANSIENT failures — the expected
+            // case of a LAN worker box momentarily unreachable / a bad response —
+            // do NOT freeze the whole UI behind a modal alert; recover quietly (the
+            // System voice picking up is itself the signal). Reserve the blocking
+            // alert for failures that need a user decision (e.g. a missing key).
+            switch error {
+            case .engineUnavailable, .badResponse:
+                KoeLog.d("engine \(failingKind.displayName) transient failure — auto-falling back to System: \(error.errorDescription ?? "?")")
+            default:
+                presentError(error, from: failingKind)
+            }
             fallBackToSystem(text: text, token: token)
         } else {
-            // Even the System voice failed — nothing left to fall back to.
+            // Even the System voice failed — nothing left to fall back to; surface it.
+            presentError(error, from: .system)
             windDown()
         }
     }
@@ -337,7 +356,7 @@ final class TTSEngineManager {
     private func presentError(_ error: TTSError, from kind: EngineKind) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "ReadFlow"
+        alert.messageText = "Koe"
         alert.informativeText = error.errorDescription ?? "Something went wrong."
 
         // Offer a System-voice fallback affordance when a non-System engine failed
@@ -412,6 +431,7 @@ final class TTSEngineManager {
         // Supersede so any pending engine callbacks are ignored.
         utteranceToken &+= 1
         activeEngine?.stop()
+        activeEngine = nil          // release the strong hold; engine stays in cache
         currentWords = []
         currentText = ""
         state = .idle
