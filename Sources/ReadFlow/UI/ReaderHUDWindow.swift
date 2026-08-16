@@ -26,6 +26,7 @@ final class ReaderHUDWindow {
     var onRateChange: ((Double) -> Void)?
     var onRestart: (() -> Void)?
     var onStop: (() -> Void)?
+    var onSeekToWord: ((Int) -> Void)?
 
     private let settings: Settings
     private var window: NSWindow?
@@ -53,6 +54,7 @@ final class ReaderHUDWindow {
         model.onRateChange = { [weak self] r in self?.onRateChange?(r) }
         model.onRestart = { [weak self] in self?.onRestart?() }
         model.onStop = { [weak self] in self?.onStop?() }
+        model.onSeekToWord = { [weak self] index in self?.onSeekToWord?(index) }
         model.onClose = { [weak self] in self?.hide() }
 
         observeSettings()

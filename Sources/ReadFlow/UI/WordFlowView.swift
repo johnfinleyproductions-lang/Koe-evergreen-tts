@@ -24,7 +24,9 @@ import AVFoundation
 @MainActor
 final class ReaderHUDModel: ObservableObject {
     // --- Manager-facing surface (unchanged contract) ---
-    @Published var words: [Word] = []
+    @Published var words: [Word] = [] {
+        didSet { recomputeSentences() }
+    }
     @Published var currentIndex: Int?
     @Published var state: TTSPlaybackState = .idle
 
@@ -54,6 +56,9 @@ final class ReaderHUDModel: ObservableObject {
     var onRestart: (() -> Void)?
     var onStop: (() -> Void)?
     var onClose: (() -> Void)?
+    /// Tap a word to read from there (click-to-read-from-here). Bridged to the
+    /// manager by ReaderHUDWindow.
+    var onSeekToWord: ((Int) -> Void)?
 
     init() {}
 
@@ -81,6 +86,35 @@ final class ReaderHUDModel: ObservableObject {
         let lo = max(0, center - Self.wordWindowRadius)
         let hi = min(all.count, center + Self.wordWindowRadius)
         return Array(all[lo..<hi])
+    }
+
+    // --- Sentence membership (drives the dual-highlight sentence band) ---
+    /// Sentence id per word (parallel to `words`); recomputed when `words` change.
+    private(set) var sentenceIds: [Int] = []
+    private func recomputeSentences() {
+        var ids: [Int] = []
+        ids.reserveCapacity(words.count)
+        var sid = 0
+        for word in words {
+            ids.append(sid)
+            if Self.endsSentence(word.text) { sid += 1 }
+        }
+        sentenceIds = ids
+    }
+    /// A word ends a sentence when, after stripping trailing quotes/brackets, its
+    /// last character is sentence-terminal. (An abbreviation may occasionally split
+    /// a band early — cosmetic only; the band is a reading aid, not a parser.)
+    private static func endsSentence(_ word: String) -> Bool {
+        var s = Substring(word)
+        while let last = s.last, "\")]}'’”»".contains(last) { s = s.dropLast() }
+        guard let last = s.last else { return false }
+        return ".!?…".contains(last)
+    }
+    /// Whether `wordIndex` is in the same sentence as the current word.
+    func inCurrentSentence(_ wordIndex: Int) -> Bool {
+        guard let ci = currentIndex, ci >= 0, ci < sentenceIds.count,
+              wordIndex >= 0, wordIndex < sentenceIds.count else { return false }
+        return sentenceIds[wordIndex] == sentenceIds[ci]
     }
 }
 
@@ -153,6 +187,7 @@ struct WrappingHStack: Layout {
 private struct KoeWordChip: View {
     let text: String
     let position: Position
+    let inCurrentSentence: Bool
     let font: Font
     let letterSpacing: CGFloat
     let palette: KoePalette
@@ -160,18 +195,35 @@ private struct KoeWordChip: View {
     enum Position { case past, current, upcoming }
 
     var body: some View {
+        // Fixed metrics: constant padding + no weight change, so the paragraph
+        // NEVER reflows as the highlight moves (the current word used to grow +
+        // pad, shifting text under the reader's eye). Emphasis is carried by the
+        // background pill and text color only.
         Text(text)
             .font(font)
             .tracking(letterSpacing)
-            .fontWeight(position == .current ? .semibold : .regular)
             .foregroundStyle(color)
-            .padding(.horizontal, position == .current ? 4 : 0)
+            .padding(.horizontal, 4)
             .padding(.vertical, 1)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(position == .current ? palette.highlightFill : Color.clear)
-            )
-            .animation(.easeOut(duration: 0.09), value: position == .current)
+            .background {
+                ZStack {
+                    // Sentence band — a soft wash behind the whole current
+                    // sentence, extended into the 6pt inter-word gap so a run
+                    // reads as one bar within a line. Helps you keep your place.
+                    if inCurrentSentence {
+                        Rectangle()
+                            .fill(palette.sentenceBand)
+                            .padding(.horizontal, -3)
+                    }
+                    // Current word — the strong pill on top.
+                    if position == .current {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(palette.highlightFill)
+                    }
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: position)
+            .animation(.easeOut(duration: 0.12), value: inCurrentSentence)
     }
 
     private var color: Color {
@@ -198,11 +250,13 @@ private struct KoeWordColumn: View {
                         KoeWordChip(
                             text: word.text,
                             position: position(for: word.index),
+                            inCurrentSentence: model.inCurrentSentence(word.index),
                             font: KoeFont.reader(model.fontName, CGFloat(model.fontSize)),
                             letterSpacing: CGFloat(model.letterSpacing),
                             palette: model.palette
                         )
                         .id(word.index)
+                        .onTapGesture { model.onSeekToWord?(word.index) }
                     }
                 }
                 .frame(maxWidth: maxWidth, alignment: .leading)
@@ -396,10 +450,12 @@ private struct KoeCaptureView: View {
             ForEach(model.displayedWords, id: \.index) { w in
                 KoeWordChip(text: w.text,
                             position: position(w.index),
+                            inCurrentSentence: model.inCurrentSentence(w.index),
                             font: KoeFont.reader(model.fontName, CGFloat(model.fontSize)),
                             letterSpacing: CGFloat(model.letterSpacing),
                             palette: page)
                     .id(w.index)
+                    .onTapGesture { model.onSeekToWord?(w.index) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

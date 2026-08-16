@@ -30,6 +30,19 @@ the commit dates on `main`.
   make Koe speak. A negative `Content-Length` (which trapped `prefix(_:)` and aborted
   the process) is now clamped.
 
+### Added — reading experience (2026-08-15 accessibility pass)
+- **Stable, non-jumping highlight.** The current word no longer grows/bolds (which
+  reflowed the paragraph as it advanced — disorienting for dyslexic reading);
+  emphasis is now carried by a fixed-metrics background pill + text color only.
+- **Current-sentence band (dual highlight).** A soft `sentenceBand` wash sits behind
+  the whole current sentence, beneath the word pill — the "sentence + word"
+  Read&Write aid for keeping your place. Sentences split on terminal punctuation
+  (`.!?…`), with trailing quotes/brackets tolerated.
+- **Click-to-read-from-here.** Tap any word to restart the read from there; the full
+  passage stays on screen and the highlight resumes at the tapped word
+  (`ReaderHUDModel.onSeekToWord` → `TTSEngineManager.readFromWord`, which speaks the
+  substring and offsets the engine's 0-based indices back to global — verified exact).
+
 ### Planned (from the 2026-06-25 multi-agent review)
 - Shared-secret auth token on the loopback server (`KoeLocalServer`) so only the
   browser extension — not arbitrary websites — can trigger a read.

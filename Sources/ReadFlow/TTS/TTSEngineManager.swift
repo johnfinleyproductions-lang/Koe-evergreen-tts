@@ -82,6 +82,11 @@ final class TTSEngineManager {
     /// utterance are ignored (e.g. a slow Kokoro fetch returning after `stop()`).
     private var utteranceToken: Int = 0
 
+    /// Click-to-read-from-here: when the user taps a word, the engine is handed a
+    /// SUBSTRING starting at that word, so its 0-based `onWord` indices are shifted
+    /// by this offset back into the full shared tokenization. 0 for a normal read.
+    private var wordIndexOffset: Int = 0
+
     /// The engine kind last seen by `settingsChanged`. Used to detect an ACTUAL
     /// engine switch (vs a rate/voice change) so we only tear down playback when
     /// the user picked a different engine.
@@ -109,6 +114,8 @@ final class TTSEngineManager {
         // stop halts and clears. Both reuse the existing read/stop paths.
         hud.onRestart = { [weak self] in self?.restart() }
         hud.onStop = { [weak self] in self?.stop() }
+        // Tap a word to read from there.
+        hud.onSeekToWord = { [weak self] index in self?.readFromWord(index) }
 
         // React to settings changes (engine/voice/rate) so a switch while idle
         // takes effect on the next read, and so we can prewarm the new engine.
@@ -274,9 +281,11 @@ final class TTSEngineManager {
             rate: rate,
             onWord: { [weak self] index in
                 guard let self, self.isCurrent(token) else { return }
-                // Index is in the shared tokenization space; clamp defensively.
-                guard index >= 0, index < self.currentWords.count else { return }
-                self.hud.highlight(index: index)
+                // Engine index is 0-based for the text it was given; add the seek
+                // offset to map back into the full shared tokenization, then clamp.
+                let full = self.wordIndexOffset + index
+                guard full >= 0, full < self.currentWords.count else { return }
+                self.hud.highlight(index: full)
             },
             onStateChange: { [weak self] newState in
                 guard let self, self.isCurrent(token) else { return }
@@ -425,6 +434,45 @@ final class TTSEngineManager {
         read(text)
     }
 
+    /// Click-to-read-from-here: re-read the loaded text starting at `wordIndex`,
+    /// keeping the FULL word list on screen so the highlight simply resumes there.
+    /// The engine is handed a substring starting at that word; `wordIndexOffset`
+    /// maps its 0-based callbacks back into the full tokenization.
+    func readFromWord(_ wordIndex: Int) {
+        let fullText = currentText
+        guard !fullText.isEmpty else { return }
+        // After a natural finish `currentWords` is cleared but `currentText` is
+        // kept — re-tokenize so tapping to re-read still works once it's done.
+        let fullWords = currentWords.isEmpty ? WordTokenizer.tokenize(fullText) : currentWords
+        guard wordIndex >= 0, wordIndex < fullWords.count else { return }
+
+        let subText = String(fullText[fullWords[wordIndex].range.lowerBound...])
+        guard !subText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        // Supersede any in-flight utterance WITHOUT tearing down the presentation
+        // (unlike stop(), which hides the HUD and drops the words).
+        activeEngine?.stop()
+        utteranceToken &+= 1
+        let token = utteranceToken
+
+        currentText = fullText
+        currentWords = fullWords
+        wordIndexOffset = wordIndex
+
+        // Jump the highlight to the tapped word now so the view scrolls and the
+        // sentence band lands immediately; `onWord` keeps it moving from there.
+        hud.highlight(index: wordIndex)
+        state = .preparing
+
+        let selectedKind = settings.engineKind
+        if selectedKind == .azure, (settings.loadAzureKey()?.isEmpty ?? true) {
+            presentError(.missingCredential(.azure), from: .azure)
+            fallBackToSystem(text: subText, token: token)
+            return
+        }
+        startEngine(for: selectedKind, text: subText, token: token)
+    }
+
     /// Stop immediately: halt the active engine, drop the in-flight utterance,
     /// hide the HUD, and return to `.idle`. Safe to call when already idle.
     func stop() {
@@ -434,6 +482,7 @@ final class TTSEngineManager {
         activeEngine = nil          // release the strong hold; engine stays in cache
         currentWords = []
         currentText = ""
+        wordIndexOffset = 0
         state = .idle
         hud.hide()
     }

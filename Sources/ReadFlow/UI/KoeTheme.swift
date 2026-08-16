@@ -75,6 +75,9 @@ struct KoePalette {
 
     /// The current-word highlight fill (vermilion at 26%).
     var highlightFill: Color { Color(hex: 0xC0432D, alpha: appearanceIsDark ? 0.34 : 0.26) }
+    /// Soft wash behind the whole CURRENT sentence (the dual-highlight reading
+    /// aid). Clearly lighter than `highlightFill` so the current word still leads.
+    var sentenceBand: Color { Color(hex: 0xC0432D, alpha: appearanceIsDark ? 0.16 : 0.10) }
     /// Captured-selection tint.
     var selectionFill: Color { Color(hex: 0xC0432D, alpha: 0.15) }
 
