@@ -57,6 +57,12 @@ final class SystemAVSpeechEngine: NSObject, TTSEngine, AVSpeechSynthesizerDelega
     private var currentText: String = ""
     /// Tokenization of `currentText`. Built once per `speak`.
     private var currentWords: [Word] = []
+    /// UTF-16 [start, end) offset of each word in `currentText`, precomputed ONCE
+    /// per utterance in a single O(n) pass (parallel to `currentWords`). Lets the
+    /// boundary callback map an offset to a word index in O(log n) instead of an
+    /// O(n²)-per-callback linear scan, which stutters the main thread on long reads.
+    private var currentWordStarts: [Int] = []
+    private var currentWordEnds: [Int] = []
     /// The utterance we started; used to ignore delegate callbacks for any other.
     private var currentUtterance: AVSpeechUtterance?
     /// Last word index we emitted, to coalesce duplicate boundary callbacks that
@@ -145,6 +151,7 @@ final class SystemAVSpeechEngine: NSObject, TTSEngine, AVSpeechSynthesizerDelega
             // Install per-utterance state + callbacks.
             self.currentText = text
             self.currentWords = words
+            (self.currentWordStarts, self.currentWordEnds) = Self.utf16WordOffsets(of: words, in: text)
             self.lastEmittedIndex = -1
             self.onWord = onWord
             self.onStateChange = onStateChange
@@ -205,9 +212,9 @@ final class SystemAVSpeechEngine: NSObject, TTSEngine, AVSpeechSynthesizerDelega
         // to a word index in the shared tokenization. The contract's helper snaps
         // to the nearest following word when the offset lands on whitespace/
         // punctuation between words, so we never drop a highlight.
-        guard let index = WordTokenizer.wordIndex(forUTF16Offset: characterRange.location,
-                                                  in: currentText,
-                                                  words: currentWords) else {
+        guard let index = Self.wordIndex(forUTF16Offset: characterRange.location,
+                                         starts: currentWordStarts,
+                                         ends: currentWordEnds) else {
             return
         }
 
@@ -262,11 +269,53 @@ final class SystemAVSpeechEngine: NSObject, TTSEngine, AVSpeechSynthesizerDelega
         currentUtterance = nil
         currentText = ""
         currentWords = []
+        currentWordStarts = []
+        currentWordEnds = []
         lastEmittedIndex = -1
         onWord = nil
         onStateChange = nil
         onFinish = nil
         onError = nil
+    }
+
+    // MARK: - UTF-16 offset index (fast boundary → word mapping)
+
+    /// Record each word's UTF-16 [start, end) offset in `text` with a SINGLE
+    /// linear walk (accumulating `utf16.count` per character), instead of calling
+    /// `String.Index.utf16Offset(in:)` per word (each O(distance) => O(n²) total).
+    private static func utf16WordOffsets(of words: [Word], in text: String) -> ([Int], [Int]) {
+        var starts: [Int] = []; starts.reserveCapacity(words.count)
+        var ends: [Int] = []; ends.reserveCapacity(words.count)
+        var pos = 0
+        var i = text.startIndex
+        for word in words {
+            while i < word.range.lowerBound {
+                pos += text[i].utf16.count
+                i = text.index(after: i)
+            }
+            starts.append(pos)
+            while i < word.range.upperBound {
+                pos += text[i].utf16.count
+                i = text.index(after: i)
+            }
+            ends.append(pos)
+        }
+        return (starts, ends)
+    }
+
+    /// Binary-search the precomputed offsets for the word containing `offset` (its
+    /// [start, end) range); if it falls between words (whitespace/punctuation),
+    /// snap to the next word — matching `WordTokenizer.wordIndex`'s contract.
+    private static func wordIndex(forUTF16Offset offset: Int, starts: [Int], ends: [Int]) -> Int? {
+        guard offset >= 0, !starts.isEmpty else { return nil }
+        var lo = 0, hi = starts.count - 1, cand = -1   // last word whose start <= offset
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if starts[mid] <= offset { cand = mid; lo = mid + 1 } else { hi = mid - 1 }
+        }
+        if cand >= 0, offset < ends[cand] { return cand }   // inside [start, end)
+        let next = cand + 1                                  // first word starting at/after offset
+        return next < starts.count ? next : nil
     }
 
     /// Map the normalized rate (1.0 == natural) onto the AVSpeech rate scale,

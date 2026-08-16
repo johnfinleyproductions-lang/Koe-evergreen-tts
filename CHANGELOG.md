@@ -9,6 +9,27 @@ the commit dates on `main`.
 
 ## [Unreleased]
 
+### Fixed / Changed (2026-08-15 review follow-up)
+- **Reader no longer hangs on long text.** The Quiet Hour / Capture views rendered
+  one live view per word in a custom `Layout` (non-lazy); a long article/PDF
+  realized tens of thousands of subviews and beachballed. Reads over 2500 words now
+  render only a sliding window (±800) around the current word — you follow the
+  highlight, so the window is exactly what you read (`WordFlowView.displayedWords`).
+- **System-voice highlight is faster on long reads.** The boundary→word mapping was
+  O(n²) per callback (≈O(n³) per read); the System engine now precomputes UTF-16
+  word offsets once (O(n)) and binary-searches per callback — verified
+  behavior-identical to the old `WordTokenizer.wordIndex` across all offsets.
+- **The font preference now works, including OpenDyslexic.** `fontName` was declared
+  but never applied (the reader was always Hiragino Mincho). It's now honored via
+  `KoeFont.reader(_:_:)`, and any `.otf`/`.ttf` bundled in `Resources/` is registered
+  at launch — drop `OpenDyslexic-Regular.otf` there to ship the dyslexia face.
+- **Loopback server hardened** (partially covers the planned auth-token item).
+  `KoeLocalServer` now rejects any request carrying an `Origin` header — a web page's
+  cross-origin POST always sends one; the extension's service worker does not — and
+  drops the wildcard `Access-Control-Allow-Origin`, so a visited page can no longer
+  make Koe speak. A negative `Content-Length` (which trapped `prefix(_:)` and aborted
+  the process) is now clamped.
+
 ### Planned (from the 2026-06-25 multi-agent review)
 - Shared-secret auth token on the loopback server (`KoeLocalServer`) so only the
   browser extension — not arbitrary websites — can trigger a read.

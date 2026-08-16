@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import CoreText
 
 // MARK: - Which main view is showing
 
@@ -124,6 +125,27 @@ enum KoeFont {
     /// Mincho serif — headings & reading body. Hiragino Mincho ProN ships on macOS.
     static func mincho(_ size: CGFloat, bold: Bool = false) -> Font {
         Font.custom(bold ? "HiraMinProN-W6" : "HiraMinProN-W3", size: size)
+    }
+
+    /// The reading-body font. Honors the user's `fontName` preference (e.g.
+    /// "OpenDyslexic", the dyslexia face) and falls back to Mincho when it's
+    /// unset. `Font.custom` degrades silently to the system font if the named
+    /// face isn't installed/registered, so this never breaks the reader.
+    static func reader(_ name: String, _ size: CGFloat) -> Font {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return mincho(size) }
+        return Font.custom(trimmed, size: size)
+    }
+
+    /// Register any .otf/.ttf faces bundled under Resources so a preference like
+    /// "OpenDyslexic" resolves without requiring a system-wide install. No-op when
+    /// none are present. Call once at launch.
+    static func registerBundledFonts() {
+        for ext in ["otf", "ttf"] {
+            for url in Bundle.main.urls(forResourcesWithExtension: ext, subdirectory: nil) ?? [] {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
     }
 
     enum GothicWeight { case regular, medium, bold }

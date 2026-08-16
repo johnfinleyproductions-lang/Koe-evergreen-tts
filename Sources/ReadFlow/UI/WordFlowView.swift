@@ -64,6 +64,24 @@ final class ReaderHUDModel: ObservableObject {
     var resolvedLineSpacing: CGFloat {
         max(2, CGFloat(fontSize) * CGFloat(max(0, lineHeight - 1.0)))
     }
+
+    // The reader lays out one live view per word inside a custom `Layout`, which
+    // cannot be lazy. For normal reads that's fine; for a very long article/PDF it
+    // would realize tens of thousands of subviews and hang. `displayedWords` caps
+    // that: below the threshold it renders everything (unchanged); above it, only a
+    // sliding window around the current word is realized — you follow the highlight,
+    // so the window centered on it is exactly what you read. Each `Word` keeps its
+    // original `.index`, so highlight position and scroll-to-current still line up.
+    static let maxInlineWords = 2500
+    static let wordWindowRadius = 800
+    var displayedWords: [Word] {
+        let all = words
+        guard all.count > Self.maxInlineWords else { return all }
+        let center = currentIndex ?? 0
+        let lo = max(0, center - Self.wordWindowRadius)
+        let hi = min(all.count, center + Self.wordWindowRadius)
+        return Array(all[lo..<hi])
+    }
 }
 
 // MARK: - Wrapping Layout (unchanged, proven)
@@ -176,11 +194,11 @@ private struct KoeWordColumn: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 WrappingHStack(horizontalSpacing: 6, verticalSpacing: model.resolvedLineSpacing) {
-                    ForEach(model.words, id: \.index) { word in
+                    ForEach(model.displayedWords, id: \.index) { word in
                         KoeWordChip(
                             text: word.text,
                             position: position(for: word.index),
-                            font: KoeFont.mincho(CGFloat(model.fontSize)),
+                            font: KoeFont.reader(model.fontName, CGFloat(model.fontSize)),
                             letterSpacing: CGFloat(model.letterSpacing),
                             palette: model.palette
                         )
@@ -375,10 +393,10 @@ private struct KoeCaptureView: View {
     // The highlighted selection (rose-tinted box; current word highlights live)
     private var selectionBox: some View {
         WrappingHStack(horizontalSpacing: 6, verticalSpacing: 10) {
-            ForEach(model.words, id: \.index) { w in
+            ForEach(model.displayedWords, id: \.index) { w in
                 KoeWordChip(text: w.text,
                             position: position(w.index),
-                            font: KoeFont.mincho(CGFloat(model.fontSize)),
+                            font: KoeFont.reader(model.fontName, CGFloat(model.fontSize)),
                             letterSpacing: CGFloat(model.letterSpacing),
                             palette: page)
                     .id(w.index)

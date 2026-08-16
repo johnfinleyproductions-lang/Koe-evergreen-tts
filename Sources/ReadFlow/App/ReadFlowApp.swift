@@ -46,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Real windowed app (Dock icon + window).
         NSApp.setActivationPolicy(.regular)
 
+        // Register any bundled reading faces (e.g. OpenDyslexic) so the fontName
+        // preference resolves without a system install. No-op if none are bundled.
+        KoeFont.registerBundledFonts()
+
         // Build the object graph (order matters: HUD before manager).
         settings = Settings.shared
         hud = ReaderHUDWindow(settings: settings)
