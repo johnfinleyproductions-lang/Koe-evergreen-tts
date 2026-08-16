@@ -64,3 +64,75 @@ document.addEventListener("mousedown", (e) => {
 });
 document.addEventListener("scroll", removeChip, true);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") removeChip(); });
+
+// --- Whole-article reading (Alt+Shift+K) ---------------------------------
+// Extract the page's MAIN content (Readability-style heuristic) and read it in
+// Koe — so you can read a full article, not just a selection.
+
+function showToast(message, kind) {
+  removeChip();
+  const t = document.createElement("div");
+  t.className = "koe-read-chip" + (kind ? " " + kind : "");
+  t.innerHTML = '<span class="koe-mark">声</span><span class="koe-label"></span>';
+  t.querySelector(".koe-label").textContent = message;
+  Object.assign(t.style, {
+    position: "fixed", top: "16px", left: "50%",
+    transform: "translateX(-50%)", zIndex: "2147483647",
+  });
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 1600);
+}
+
+function extractArticle() {
+  // Prefer obvious semantic containers.
+  let best =
+    document.querySelector("article") ||
+    document.querySelector("main") ||
+    document.querySelector('[role="main"]');
+
+  // Otherwise pick the block whose paragraphs carry the most text.
+  if (!best) {
+    let bestScore = 0;
+    document.querySelectorAll("article, main, section, div").forEach((el) => {
+      if (el.closest("nav, header, footer, aside")) return;
+      let score = 0;
+      el.querySelectorAll("p").forEach((p) => (score += (p.innerText || "").length));
+      if (score > bestScore) { bestScore = score; best = el; }
+    });
+  }
+
+  const root = best || document.body;
+  const parts = [];
+  root.querySelectorAll("h1, h2, h3, h4, p, li, blockquote").forEach((el) => {
+    if (el.closest("nav, header, footer, aside")) return;
+    const text = (el.innerText || "").trim();
+    if (text) parts.push(text);
+  });
+
+  let text = parts.join("\n\n");
+  if (text.trim().length < 200) {
+    text = (root.innerText || document.body.innerText || "").trim();
+  }
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function readWholeArticle() {
+  const text = extractArticle();
+  if (!text || text.length < 40) { showToast("No article text found", "koe-error"); return; }
+  try {
+    chrome.runtime.sendMessage({ type: "readInKoe", text }, (resp) => {
+      const ok = resp && resp.ok;
+      showToast(ok ? "Reading article in Koe ✓" : "Koe not open", ok ? "koe-sent" : "koe-error");
+    });
+  } catch (err) {
+    showToast("Koe not open", "koe-error");
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  // Alt+Shift+K → read the whole article (distinct combo to avoid clashes).
+  if (e.altKey && e.shiftKey && (e.key === "K" || e.key === "k")) {
+    e.preventDefault();
+    readWholeArticle();
+  }
+});

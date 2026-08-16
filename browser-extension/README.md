@@ -5,8 +5,14 @@ the Koe app reads it aloud. This covers the one place the native floating chip c
 reach: inside Chrome / Arc / Edge / Brave (browsers hide their text from macOS
 accessibility, so web reading needs an in-page button).
 
+**Read a whole article** (not just a selection): press **⌥⇧K** (Alt+Shift+K) on any
+article page and Koe reads the page's main content — nav, headers, sidebars, and
+footers stripped by a Readability-style heuristic. Koe resumes a long article where
+you left off.
+
 ## How it works
-- `content.js` shows the chip on text selection and sends the text to the background worker.
+- `content.js` shows the chip on text selection (and, on ⌥⇧K, extracts the page's
+  main article text) and sends it to the background worker.
 - `background.js` POSTs the text to the Koe app's local listener at `http://127.0.0.1:8765/read`.
 - The Koe app (must be running) receives it and reads it aloud — same voices, same window.
 

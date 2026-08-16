@@ -162,11 +162,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.togglePlayPause()
     }
 
-    /// Text pushed in from the browser extension via the local listener.
+    /// Text pushed in from the browser extension via the local listener. Routed
+    /// through `readDocument` so a whole-article capture resumes where you left
+    /// off; a short selection just reads from the top.
     @objc private func handleReadExternal(_ note: Notification) {
         guard let text = note.object as? String,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        manager.read(text)
+        manager.readDocument(text)
     }
 
     // MARK: - Selection capture

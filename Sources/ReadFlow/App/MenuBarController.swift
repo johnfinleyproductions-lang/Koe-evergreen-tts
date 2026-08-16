@@ -238,13 +238,23 @@ final class MenuBarController {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        guard let text = PDFReader.extractText(from: url),
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            presentInfo(title: "Couldn't Read PDF",
-                        message: "No readable text was found in \(url.lastPathComponent).")
-            return
+        // Extract OFF the main thread — a large or scanned (OCR) PDF can take
+        // seconds, and doing it on main would beachball the app. Read (resuming
+        // where you left off) once the text is ready.
+        let name = url.lastPathComponent
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let text = PDFReader.extractText(from: url)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let text,
+                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    self.presentInfo(title: "Couldn't Read PDF",
+                                     message: "No readable text was found in \(name).")
+                    return
+                }
+                self.manager.readDocument(text)
+            }
         }
-        manager.read(text)
     }
 
     @objc private func selectEngine(_ sender: NSMenuItem) {

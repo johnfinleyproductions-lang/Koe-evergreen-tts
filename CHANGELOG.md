@@ -43,6 +43,20 @@ the commit dates on `main`.
   (`ReaderHUDModel.onSeekToWord` → `TTSEngineManager.readFromWord`, which speaks the
   substring and offsets the engine's 0-based indices back to global — verified exact).
 
+### Added — read the whole thing (2026-08-15)
+- **Read a whole PDF, off the main thread.** "Open PDF…" already extracted the full
+  document; extraction now runs on a background queue (no beachball on large/scanned
+  OCR PDFs — review finding M9) and reads via the resume-aware path. The long-text
+  render fix makes book-length PDFs viable.
+- **Read a whole web article.** ⌥⇧K in the browser extension extracts the page's main
+  content (Readability-style heuristic: prefer `<article>`/`<main>`, else the densest
+  paragraph block; strip nav/header/footer/aside) and reads it — not just a selection.
+- **Resume position.** New `ReadingPositionStore` persists the furthest word reached
+  per document (keyed by a stable content hash). Re-opening the same PDF/article
+  resumes where you left off; pause→play resumes at the paused word; finishing clears
+  the position. Only documents (≥120 words) resume — short selections always start at
+  the top (`TTSEngineManager.readDocument` is the resume-aware entry).
+
 ### Planned (from the 2026-06-25 multi-agent review)
 - Shared-secret auth token on the loopback server (`KoeLocalServer`) so only the
   browser extension — not arbitrary websites — can trigger a read.
