@@ -9,6 +9,55 @@ the commit dates on `main`.
 
 ## [Unreleased]
 
+### Added — PDF book highlighting (2026-10-05)
+- Select PDF text and highlight it in yellow, green, pink or blue. Mark area
+  supports scanned pages and illustrations with page-relative rectangles.
+- Each book saves its marks atomically beside its private copy, bound to the
+  original source hash. PDF and audio bytes remain unchanged.
+- Open the highlights list to return to a marked page or remove a mark. Invalid
+  saved files are preserved and save failures are shown, without reporting
+  unsaved marks as saved.
+
+### Added — Kokoro option for Books (2026-10-05)
+- **Book voice picker.** Choose Audiobook Narrator or Koe's configured Kokoro
+  voice. Kokoro can read imported chapters before recorded narration is ready.
+- **Kokoro resume and page following.** Seek by source word, retain that position
+  across relaunches, and follow original PDF pages with Kokoro's own word timing.
+- **Private passage cache.** Resume from stable cached chunks, keep profiles
+  separate by voice and server, and replay cached passages offline. An unavailable
+  passage stops with an error instead of skipping book content. Original chapter
+  recordings and their timing remain intact.
+
+### Added — native book pages and recorded narration (2026-10-05)
+- **Books in the Mac sidebar.** Open original PDF pages alongside a chapter
+  list and recorded narration, with Fit/zoom, page navigation, seeking and speed.
+- **Saved book position.** Restore the chapter, PDF page, listening time, zoom,
+  speed and page-following preference after leaving or relaunching Koe.
+- **Follow narrated pages.** Prepared per-page text is mapped to the exact
+  recorded chapter source and existing word timings; manual navigation disables
+  following until selected again. Uncertain mappings remain manual.
+- **Offline books and finished-chapter refresh.** Verified prepared books reuse
+  original PDFs and MP3s. Koe's own Evergreen sign-in retrieves newly completed
+  chapters without rerunning OCR or narration.
+- **Recoverable app installation.** Verify the signed bundle before replacing
+  the installed app and retain its previous version as a backup.
+
+### Added — persistent highlights and editable export
+- **Manual passage highlighting in Capture.** Select any text and mark it yellow,
+  green, pink, or blue from the small selection popover. Highlights are stored
+  by a stable fingerprint of the source text, survive relaunches, and can be
+  cleared from a selected range.
+- **Highlight access from The Quiet Hour.** A visible `Highlight & export` action
+  returns to the selectable Capture document instead of leaving the feature
+  discoverable only by changing sidebar views.
+- **Two-format export.** `Export PDF + editable RTF` creates a clean, paginated,
+  selectable-text PDF and a matching RTF with the same highlights. The RTF opens
+  for editing in Pages, Microsoft Word, or TextEdit. Export now sits in the
+  compact reading-action strip beside Listen and Add to canvas.
+- **Native long-document text selection.** Capture uses a focused `NSTextView`
+  bridge so mouse/trackpad selection, scrolling, saved highlights, and Koe's live
+  spoken-word highlight can coexist without flattening the text into an image.
+
 ### Fixed / Changed (2026-08-15 review follow-up)
 - **Reader no longer hangs on long text.** The Quiet Hour / Capture views rendered
   one live view per word in a custom `Layout` (non-lazy); a long article/PDF

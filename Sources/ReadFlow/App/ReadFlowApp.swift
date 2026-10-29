@@ -18,6 +18,15 @@ import AppKit
 enum ReadFlowMain {
     static func main() {
         let app = NSApplication.shared
+        // This AppKit entry point does not get SwiftUI's standard app menu.
+        // Give windowed Koe a normal Cmd-Q so book position is saved on exit.
+        let menu = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Koe")
+        let quit = NSMenuItem(title: "Quit Koe", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = app
+        appMenu.addItem(quit); appItem.submenu = appMenu; menu.addItem(appItem)
+        app.mainMenu = menu
         // Retain the delegate for the lifetime of the process.
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -58,7 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey = HotKeyManager()
 
         // Show the Koe window on launch.
+        if CommandLine.arguments.contains("--books") { hud.model.koeView = .books }
         hud.showWindow()
+
+        // A staged viewer rehearsal should not compete for the installed app's
+        // hotkey, loopback listener, accessibility chip or model prewarming.
+        if CommandLine.arguments.contains("--book-preview") { return }
 
         // Reflect engine state in the menu-bar icon. Manager invokes this on the
         // main thread (it is @MainActor). [weak self] avoids a retain cycle

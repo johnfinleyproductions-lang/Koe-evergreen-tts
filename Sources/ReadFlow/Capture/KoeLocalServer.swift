@@ -94,12 +94,14 @@ final class KoeLocalServer: @unchecked Sendable {
             send(conn, status: "204 No Content"); return
         }
         if method == "POST", path.hasPrefix("/read") {
-            // CSRF guard: reject any request that carries an Origin header. A web
-            // page's cross-origin POST always sends one; the extension's service
-            // worker (which holds the 127.0.0.1 host permission) sends none. This
-            // blocks any visited page from making Koe speak, without touching the
-            // extension.
-            if origin != nil {
+            // CSRF guard: a visited web page's cross-origin POST always carries an
+            // http(s):// Origin that the browser sets and the page cannot forge, so
+            // reject those. A browser extension's service-worker POST carries a
+            // chrome-extension:// (or moz-/safari-web-extension://) Origin — that is
+            // our legitimate caller — and non-browser clients (native code) send
+            // none. So allow extension-scheme origins and no Origin; reject the rest.
+            // This blocks page-driven CSRF without blocking the extension.
+            if let origin, !Self.isExtensionOrigin(origin) {
                 send(conn, status: "403 Forbidden", payload: "forbidden"); return
             }
             if let text = String(data: body, encoding: .utf8),
@@ -115,6 +117,17 @@ final class KoeLocalServer: @unchecked Sendable {
             return
         }
         send(conn, status: "404 Not Found", payload: "not found")
+    }
+
+    /// A browser extension's service-worker fetch carries an extension-scheme
+    /// Origin (chrome-extension://<id>, moz-extension://, safari-web-extension://)
+    /// that a web page cannot spoof — the browser sets Origin itself, and pages
+    /// only ever send http(s)://. So only extension-scheme origins are trusted.
+    private static func isExtensionOrigin(_ origin: String) -> Bool {
+        let o = origin.lowercased()
+        return o.hasPrefix("chrome-extension://")
+            || o.hasPrefix("moz-extension://")
+            || o.hasPrefix("safari-web-extension://")
     }
 
     // MARK: - Response

@@ -27,6 +27,7 @@ enum KoeView: String {
     case canvas    // Idea Canvas — dot-grid whiteboard with sticky notes
     case boards    // Boards — named collections of saved reading snippets
     case library   // Library — write & synthesize workspace
+    case books     // Original PDFs with cached chapter narration
 }
 
 // MARK: - Light / dark

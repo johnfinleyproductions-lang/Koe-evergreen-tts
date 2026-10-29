@@ -110,6 +110,7 @@ final class ReaderHUDWindow {
         model.rate = settings.rate
         model.engineLabel = settings.engineKind.displayName
         model.words = words
+        model.loadHighlightDocument(sourceText)
         model.currentIndex = nil
         model.state = .preparing
         // Land in Capture — the document page where the selection highlights as

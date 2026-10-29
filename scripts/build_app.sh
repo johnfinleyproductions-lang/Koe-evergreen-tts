@@ -8,16 +8,20 @@
 #     bash "scripts/build_app.sh"
 #
 # What it does:
-#   1. swift build -c release            (arm64 executable)
+#   1. swift build                      (native executable)
 #   2. assemble ReadFlow.app             (MacOS binary + Info.plist + Resources)
-#   3. ad-hoc codesign                   (codesign --force --deep --sign -)
-#   4. print Accessibility-grant steps
+#   3. sign with the existing Koe identity and verify
+#   4. optionally install, retaining the previous app
 #
 # The finished app lands in:  build/ReadFlow.app
 #
 # Note: the project path contains a space, so every path is quoted.
 
 set -euo pipefail
+BUILD_MODE="${1:---build-only}"
+if [[ "$BUILD_MODE" != "--build-only" && "$BUILD_MODE" != "--install" ]]; then
+    printf 'usage: %s [--build-only|--install]\n' "$0" >&2; exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -33,12 +37,18 @@ SHORT_VERSION="1.0"
 BUILD_VERSION="1"
 
 BUILD_DIR="${PROJECT_ROOT}/build"
-APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
+mkdir -p "${BUILD_DIR}"
+# Sign outside File Provider folders: Documents can add Finder metadata while
+# codesign is running, even after xattr has stripped it.
+SIGNING_DIR="$(mktemp -d /private/tmp/koe-signing.XXXXXX)"
+trap 'rm -rf "${SIGNING_DIR}"' EXIT
+APP_BUNDLE="${SIGNING_DIR}/${APP_NAME}.app"
+PUBLISHED_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 MACOS_DIR="${APP_BUNDLE}/Contents/MacOS"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
 INFO_PLIST="${APP_BUNDLE}/Contents/Info.plist"
 ENTITLEMENTS="${BUILD_DIR}/${APP_NAME}.entitlements"
-RELEASE_BIN="${PROJECT_ROOT}/.build/release/${APP_NAME}"
+RELEASE_BIN="${PROJECT_ROOT}/.build/debug/${APP_NAME}"
 
 # ---------------------------------------------------------------------------
 # Pretty printing
@@ -49,14 +59,14 @@ info()  { printf '\033[34m•\033[0m %s\n' "$*"; }
 warn()  { printf '\033[33m!\033[0m %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
-# 1. Compile (release)
+# 1. Compile
 # ---------------------------------------------------------------------------
-bold "[1/4] Building ReadFlow (release)…"
-info "swift build -c release"
-( cd "${PROJECT_ROOT}" && swift build -c release )
+bold "[1/4] Building Koe…"
+info "swift build"
+( cd "${PROJECT_ROOT}" && swift build )
 
 if [[ ! -x "${RELEASE_BIN}" ]]; then
-    warn "Release binary not found at: ${RELEASE_BIN}"
+    warn "Built binary not found at: ${RELEASE_BIN}"
     exit 1
 fi
 ok "Built ${RELEASE_BIN}"
@@ -140,9 +150,9 @@ PLIST
 ok "Wrote Info.plist (LSUIElement=0 — real window app, NSAppleEventsUsageDescription)"
 
 # ---------------------------------------------------------------------------
-# 3. Ad-hoc codesign
+# 3. Code signing
 # ---------------------------------------------------------------------------
-bold "[3/4] Code signing (ad-hoc)…"
+bold "[3/4] Code signing…"
 
 # Entitlements: keep the app UNSANDBOXED so Accessibility, the global hotkey,
 # and the clipboard fallback all work; allow sending Apple events for Cmd-C.
@@ -171,7 +181,7 @@ xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
 SIGN_IDENTITY="Koe Signing"
 if security find-certificate -c "${SIGN_IDENTITY}" >/dev/null 2>&1; then
     SIGN_ARG="${SIGN_IDENTITY}"
-    ok "Signing with stable identity '${SIGN_IDENTITY}' — Accessibility grant persists across rebuilds"
+    ok "Signing with the existing identity '${SIGN_IDENTITY}'"
 else
     SIGN_ARG="-"
     warn "Stable cert '${SIGN_IDENTITY}' not found; using ad-hoc (you'll re-grant Accessibility each rebuild)."
@@ -182,11 +192,11 @@ codesign --force --deep --sign "${SIGN_ARG}" \
     --entitlements "${ENTITLEMENTS}" \
     "${APP_BUNDLE}"
 
-if codesign --verify --deep --strict "${APP_BUNDLE}" 2>/dev/null; then
-    ok "Ad-hoc signed and verified"
-else
-    warn "Code signature verification reported issues (ad-hoc signing can still run locally)"
-fi
+codesign --verify --deep --strict "${APP_BUNDLE}"
+ok "Signed and verified"
+rm -rf "${PUBLISHED_BUNDLE}"
+ditto --norsrc --noextattr "${APP_BUNDLE}" "${PUBLISHED_BUNDLE}"
+codesign --verify --deep --strict "${PUBLISHED_BUNDLE}"
 
 # ---------------------------------------------------------------------------
 # 3b. Refresh the installed /Applications copy (if present)
@@ -195,17 +205,23 @@ fi
 # keep it current on every rebuild IN PLACE at the same path, so the stable
 # "Koe Signing" identity + path keep the Accessibility grant intact.
 INSTALLED_APP="/Applications/Koe.app"
-if [[ -d "${INSTALLED_APP}" ]]; then
+if [[ "$BUILD_MODE" == "--install" && -d "${INSTALLED_APP}" ]]; then
     # Quit any running copy so we never overwrite a live binary, then swap
     # atomically: stage the new bundle beside the target and `mv` it over (a
     # same-filesystem rename), instead of `rm -rf`'ing the live app in place.
-    osascript -e 'quit app "Koe"' >/dev/null 2>&1 || true
-    killall Koe >/dev/null 2>&1 || true
+    # Close Koe through its ordinary UI before using --install. Never replace a
+    # running bundle or erase the prior version; the rename is recoverable.
+    if pgrep -x ReadFlow >/dev/null; then
+        warn "Quit Koe before installing the verified update."; exit 1
+    fi
     STAGE="$(dirname "${INSTALLED_APP}")/.Koe.app.new.$$"
     rm -rf "${STAGE}"
-    if cp -R "${APP_BUNDLE}" "${STAGE}"; then
-        rm -rf "${INSTALLED_APP}"
+    if ditto --norsrc --noextattr "${APP_BUNDLE}" "${STAGE}"; then
+        codesign --verify --deep --strict "${STAGE}"
+        BACKUP="$(dirname "${INSTALLED_APP}")/.Koe.before-native-books.$(date +%Y%m%d-%H%M%S).app"
+        mv "${INSTALLED_APP}" "${BACKUP}"
         mv "${STAGE}" "${INSTALLED_APP}"
+        ok "Previous app retained at ${BACKUP}"
         ok "Refreshed installed copy: ${INSTALLED_APP}"
     else
         rm -rf "${STAGE}"
@@ -217,20 +233,11 @@ fi
 # 4. Next steps
 # ---------------------------------------------------------------------------
 bold "[4/4] Done."
-ok "Built app: ${APP_BUNDLE}"
-if [[ -d "${INSTALLED_APP}" ]]; then ok "Installed app: ${INSTALLED_APP} (Koe)"; fi
+ok "Built app: ${PUBLISHED_BUNDLE}"
+if [[ "$BUILD_MODE" == "--install" && -d "${INSTALLED_APP}" ]]; then ok "Installed app: ${INSTALLED_APP} (Koe)"; fi
 echo
 bold "Launch it:"
-echo "    open \"${APP_BUNDLE}\""
-echo
-bold "Grant Accessibility permission (needed to read your selected text):"
-echo "  1. Launch ReadFlow (command above). The Koe window opens (and a Dock icon)."
-echo "  2. Open System Settings → Privacy & Security → Accessibility."
-echo "  3. Turn ON the switch next to ReadFlow."
-echo "     (If ReadFlow is not listed, click +, then add it from:"
-echo "      ${APP_BUNDLE} )"
-echo "  4. If you had an older copy enabled, toggle it OFF then ON again so macOS"
-echo "     picks up this freshly signed build."
+echo "    open \"${PUBLISHED_BUNDLE}\""
 echo
 info "Select text anywhere, then press Option-R to read it aloud."
 info "The System voice works immediately. Kokoro (natural, local) and Azure are optional upgrades — see README.md."
