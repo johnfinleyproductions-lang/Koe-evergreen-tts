@@ -1,126 +1,149 @@
-# Koe for iPad — port plan
+# Koe for iPad — companion plan
 
-Written 2026-10-29 from a live look at the repo, the Mac's Xcode state and the
-Core Books lane. Not a 1:1 port: the iPad gets Listen, Books and Pencil-native
-reading, plus iPad-only extras. Capture (AX chip, Services, ⌥R, the browser
-extension's loopback server) stays Mac-only.
+Written 2026-10-29, revised the same day after Tyler set the scope.
 
-## 1. What carries over (measured)
+**Scope.** The iPad is a *companion* to what Koe already holds: the Books that
+come from Evergreen Core, and the Boards, Library notebooks, Idea Canvas,
+highlights and reading positions that live in the Mac app. It listens, shows,
+marks up and resumes. It does **not** capture: no select-text-anywhere chip, no
+Services/⌥R, no browser extension, no Share extension, no book import or drop,
+no camera scanning. Those stay on the Mac.
 
-33 Swift files; 14 import AppKit/Cocoa.
+## 1. The device (verified)
+
+- **iPad Air 11-inch (M2), 2024**, Starlight, 128 GB, Wi-Fi — part number
+  MUWE3LL/A. Running **iPadOS 27** (upgrading 2026-10-29).
+- **Pencil hover: yes** (iPad Air M2 is on Apple's hover list).
+- **Compatible pencils: Apple Pencil Pro or Apple Pencil (USB-C) only.** The
+  2nd-generation Pencil does not pair with the M2 Air.
+  - Pencil Pro: pressure, tilt, hover, double-tap, squeeze, barrel roll,
+    haptics, Find My. Every Pencil feature below works.
+  - Pencil (USB-C): hover and tilt only. No pressure, no double-tap, no
+    squeeze. Gesture features below fall back to on-screen buttons.
+- Which Pencil Tyler has is still unknown → §7.
+
+## 2. What carries over (measured on the repo, 33 Swift files, 14 AppKit)
 
 | Folder   | files | AppKit | Verdict |
 |----------|------:|-------:|---------|
 | Core/    | 4 | 0 | as-is (ReadingPosition, ReadingHighlights, tokenizer) |
-| TTS/     | 5 | 1 | as-is: KokoroEngine (URLSession + AVAudioPlayer, LAN `/dev/captioned_speech` word timestamps), SystemAVSpeechEngine; the one AppKit file is the Mac switcher UI |
-| Books/   | 9 | 3 | store, models, connection (WKWebView sign-in + URLSession), player, highlights model as-is; `KoePDFPageView` (NSViewRepresentable→UIViewRepresentable, PDFView exists on iOS), BooksView, HighlightControls need UIKit twins |
-| UI/      | 8 | 5 | WordFlowView, HighlightingTextView (NSTextView→UITextView), KoeTheme fonts (NSFont→UIFont), HUD window need twins |
-| Capture/ | 4 | 2 | dropped on iPad (Share extension + paste + Files instead) |
+| TTS/     | 5 | 1 | as-is: KokoroEngine (URLSession + AVAudioPlayer; LAN `/dev/captioned_speech` word timestamps), SystemAVSpeechEngine; the AppKit file is the Mac voice switcher |
+| Books/   | 9 | 3 | store, models, Core connection (WKWebView sign-in), player, highlights model as-is; `KoePDFPageView` becomes `UIViewRepresentable` (PDFView exists on iOS); BooksView + HighlightControls get UIKit twins |
+| UI/      | 8 | 5 | WordFlowView, HighlightingTextView (NSTextView→UITextView), KoeTheme fonts (NSFont→UIFont), HUD window → iPad twins |
+| Capture/ | 4 | 2 | **not ported** (scope) |
 | App/     | 3 | 3 | new SwiftUI `App` entry for iPad |
 
-The browser extension's `extractArticle()` in `browser-extension/content.js`
-can run unchanged inside a WKWebView on iPad for "read this page".
+## 3. Sync is the centre of this port
 
-## 2. Tooling (what the Mac has on 2026-10-29)
+Books already sync: Core serves them and stores per-user progress
+(`/api/reader/books/{id}/progress`). Everything else the companion needs lives
+**only in the Mac's UserDefaults**: `readflow.boards` (31 KB), `canvasNotes`
+(34 KB), `canvasLinks`, `notebooks`, `librarySections`,
+`readingHighlights.v1`, `readingPositions`.
 
-- `/Applications/Xcode.app` = **16.3** (iOS 18.4 SDK). `xcode-select` points at
-  the Command Line Tools. **0** codesigning identities. No Apple ID signed into
-  Xcode. Tyler's iPhone 16 is paired to Xcode; the iPad is not.
-- **Need Xcode 26.x**: an iPad on iPadOS 26 is not deployable from Xcode 16,
-  and App Store uploads have required Xcode 26 since 2026-04-28. macOS 26.2 is
-  fine. Keep 16.3 around; nothing else needs it.
-- **Signing**: sign in with the Apple ID in Xcode → "Personal Team" (free):
-  installs on your own iPad, app expires every 7 days, no iCloud/push. The
-  $99/yr program gives 1-year profiles + TestFlight. Decide in Phase 0.
-- **Project**: SwiftPM cannot produce an iOS app bundle, so add an Xcode
-  project with an iPad app target that depends on the local package.
-  Try **XcodeGen** (`ios/project.yml`, local package via `packages: … path:`)
-  first; its issue #1575 (open, Aug 2025, 2.44.1) reports local packages
-  generated as plain file references. If it bites: a hand-made `.xcodeproj`
-  committed once, or Tuist.
-- **Package split**: `Package.swift` → `platforms: [.macOS(.v13), .iOS(.v17)]`
-  and three targets: `KoeCore` (platform-neutral), `KoeMac` (AppKit, today's
-  executable), `KoeiPad` (UIKit/SwiftUI). `scripts/build_app.sh` unchanged.
+Decision: **Core is the sync server.** Reasons: Koe already signs into Core
+with its own session; Core already holds book progress; a free Personal Team
+cannot use iCloud/CloudKit entitlements; the house keeps data on the LAN.
 
-## 3. iPad landmines (verified against Apple docs/forums)
+Shape (a Core PR, Tyler merges): `GET/PUT /api/koe/state/{key}` per user and
+workspace, JSON blob + `updatedAt` + `revision`, last-writer-wins with the
+losing copy kept as `{key}.conflict`. Mac Koe pushes on change (debounced);
+iPad pulls on launch and when a view opens. Keys = the UserDefaults names
+above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 
-- **Local network privacy**: add `NSLocalNetworkUsageDescription` to Info.plist
-  or calls to `192.168.4.200` (Kokoro :8880, Core :3000) fail. iPadOS shows
-  the prompt on the first LAN call.
-- **ATS**: IP-literal `http://` to the LAN is exempt, same as on the Mac.
-  Away from home → Tailscale (house rule: no public exposure).
-- **Audio**: set `AVAudioSession` to `.playback` and add `UIBackgroundModes:
-  audio`, or reading stops when the screen locks. Add Now Playing + remote
-  controls (lock screen play/pause).
-- **Pencil model matters**: 1st-gen / USB-C Pencil = no gestures; Pencil 2 =
-  double-tap; Pencil Pro = squeeze (iPadOS 17.5+), haptics, barrel roll;
-  **hover** needs iPad Air M2/M3 (or iPad Pro) with Pencil 2/Pro.
-- **Pencil on PDF pages**: use PDFKit's `PDFPageOverlayViewProvider` (iOS 16+,
-  WWDC22 session 10089) returning one `PKCanvasView` per page. Set
-  `usePageViewController = false` *before* assigning the document or touches go
-  to scrolling; match `contentScaleFactor` to the zoom or ink blurs.
-- **No loopback server**: the extension/`KoeLocalServer` capture path has no
-  iPad equivalent. Use a Share extension and the system paste.
+## 4. Tooling (the Mac on 2026-10-29)
 
-## 4. Phases
+- Mac: Apple silicon, **macOS 26.2**, 96 GB free. `/Applications/Xcode.app` is
+  **16.3** (iOS 18.4 SDK), `xcode-select` points at the CLT, 0 signing
+  identities, no Apple ID in Xcode. Tyler's iPhone 16 is paired; the iPad is not.
+- **An iPadOS 27 iPad needs Xcode 27.x.** Xcode 27.1 (2026-10-15) ships the
+  iPadOS 27 SDK and **requires macOS Tahoe 26.6 or later**. Software Update
+  offers **macOS 26.7.2** (7.3 GB) and **macOS 27.2** (11.1 GB).
+  Recommendation: take **26.7.2** first (same major; lowest risk to the Koe
+  signing cert, Accessibility grants, Docker and the Studio worker). 27.2 is a
+  separate decision. Both need a restart, which ends the other Claude sessions.
+- Then: Xcode 27.1 from developer.apple.com or the App Store, `sudo
+  xcode-select -s /Applications/Xcode.app`, sign in with the Apple ID
+  → Personal Team (free, 7-day installs, no iCloud/push) or $99/yr (1-year
+  profiles, TestFlight). Keep Xcode 16.3 for nothing; it can go.
+- **Project.** SwiftPM cannot build an iOS app bundle. Add `ios/project.yml`
+  for **XcodeGen** with an iPad app target depending on the local package
+  (`packages: KoeCore: path: ..`). Known open issue #1575 (Aug 2025, 2.44.1)
+  about local packages → fallback is a hand-made `.xcodeproj` committed once,
+  or Tuist.
+- **Package split.** `Package.swift` → `platforms: [.macOS(.v13), .iOS(.v17)]`;
+  targets `KoeCore` (neutral), `KoeMac` (today's executable), `KoeiPad`.
+  `scripts/build_app.sh` unchanged.
 
-**Phase 0 — Tooling (half a day).** Install Xcode 26, sign in, pair the iPad,
-record iPad model/iPadOS/Pencil model, generate the project, run an empty
-KoeiPad app on the device. Exit: app icon on the iPad.
+## 5. iPad landmines (verified)
 
-**Phase 1 — Listen.** Paste or share text → The Quiet Hour on iPad: word
-highlight + sentence band, Kokoro over the LAN with System-voice fallback, live
-speed, resume position, Boards read-only, lock-screen controls.
-Exit: a 2,500-word article reads gaplessly with the highlight tracking.
+- `NSLocalNetworkUsageDescription` in Info.plist or LAN calls to
+  `192.168.4.200` (Kokoro :8880, Core :3000) fail. Prompt shows on first call.
+- ATS exempts IP-literal `http://` on the LAN, same as the Mac. Away from
+  home → Tailscale; never expose Core or Kokoro publicly.
+- `AVAudioSession` `.playback` + `UIBackgroundModes: audio`, or reading stops
+  at screen lock. Add Now Playing + remote controls.
+- Pencil over PDF pages: `PDFPageOverlayViewProvider` (iOS 16+, WWDC22 10089)
+  returning one `PKCanvasView` per page. Set `usePageViewController = false`
+  *before* assigning the document or touches scroll instead of draw; match
+  `contentScaleFactor` to the zoom or ink blurs.
+- Ink never touches the PDF bytes: `PKDrawing` data per page, saved beside
+  `highlights.json` in the `.koebook` folder and synced via `pencilInk/…`.
 
-**Phase 2 — Books.** Sign into Core from the iPad, pull the two pilot books,
-original PDF pages, Audiobook Narrator + Kokoro voices, follow pages, colour
-highlights, offline cache in the app sandbox. Book progress goes through Core's
-existing `/api/reader/books/{id}/progress` so Mac and iPad share it.
+## 6. Phases
+
+**Phase 0 — Tooling (half a day, mostly downloads).** macOS 26.7.2 → Xcode
+27.1 → Apple ID → pair the iPad → XcodeGen project → empty KoeiPad on the
+device. Exit: Koe icon on the iPad.
+
+**Phase 1 — Books companion (no Core change needed).** Sign into Core from
+the iPad, pull the two pilot books, original PDF pages, Audiobook Narrator +
+Kokoro voices with word highlight, follow pages, show existing colour
+highlights, offline cache, progress through Core so Mac and iPad agree.
 Exit: ACQ Closer Handbook resumes at the saved word on both devices.
 
+**Phase 2 — Boards, Library, Canvas companion (needs the Core sync PR).**
+Boards list → play a saved snippet with the highlight; notebooks and
+librarySections read-only; Idea Canvas pannable with ▶ playable cards;
+readingPositions and readingHighlights shared. Exit: a Board saved on the Mac
+plays on the iPad within a minute.
+
 **Phase 3 — Pencil.**
-- Tap a word → read from here (model already supports `onSeekToWord`).
-- **Reading pen**: drag (or hover, where supported) the tip along a line and
-  Koe reads the words under it — `UIHoverGestureRecognizer` on hover-capable
-  iPads, pencil-type touch drag everywhere.
+- Tap a word → read from here (model already has `onSeekToWord`).
+- **Reading pen**: hover or drag the tip along a line and Koe reads the words
+  under it (`UIHoverGestureRecognizer`; this iPad supports hover with either
+  pencil). Reading ruler / line focus follows the pen.
 - Double-tap / squeeze → play/pause via `UIPencilInteraction`, honouring the
-  user's Settings preference (`preferredTapAction` / `preferredSqueezeAction`).
-- Drag-select a passage with the Pencil → colour highlight or "Save to Board".
-- Ink layer per PDF page: `PKCanvasView` overlay, `PKDrawing` data saved beside
-  `highlights.json` in the `.koebook` folder; never touches the PDF bytes.
-- Reading ruler / line focus that follows the pen.
-- Scribble in note fields (free); PencilKit on the Idea Canvas (later).
+  Settings preference. **Pencil Pro only**; USB-C falls back to a button.
+- Pencil-select a passage on a book page → colour mark (same four colours as
+  the Mac) or "Save to Board".
+- Ink layer per PDF page (above), synced.
+- Scribble in note fields is free; PencilKit on the Idea Canvas later.
 
-**Phase 4 — iPad-only extras.** VisionKit camera page scan → read aloud;
-Safari Share extension "Read in Koe"; App Intents/Shortcuts "Read my
-clipboard"; Split View drag-in from Safari; Stage Manager window sizes.
+**Phase 4 — iPad polish.** Lock-screen controls, Shortcuts "Continue my
+book" / "Play Board …", a "Continue reading" widget, Stage Manager sizes,
+Split View beside Notes or Safari as a listen-along.
 
-## 5. Sync Mac ↔ iPad
-
-- Book progress: Core (above). Already per-user, already live.
-- Boards / canvas / Capture highlights / Pencil ink: local on each device
-  first. Later: CloudKit, or a small Core endpoint. Not before Phase 3.
-
-## 6. Repos and references (checked 2026-10-29)
+## 7. Repos and references (checked 2026-10-29)
 
 | What | Use it for | Notes |
 |------|------------|-------|
-| mlalma/kokoro-ios (`KokoroSwift`) | on-device Kokoro when off the LAN | MLX Swift, iOS 18+, MIT, token timestamps since 1.0.8; experimental; needs the model file supplied |
+| mlalma/kokoro-ios (`KokoroSwift`) | on-device Kokoro when off the LAN | MLX Swift, iOS 18+, MIT, token timestamps since 1.0.8; experimental; model file supplied by us |
 | mattmireles/kokoro-coreml (HF) | Core ML Kokoro fallback | author claims faster than MLX; no timestamps mentioned |
-| k2-fsa/sherpa-onnx | offline TTS with many voices | Swift API for Kokoro (#1803) + iOS demo (#1812) in its changelog; `ios-swiftui/` has TtsLexicon/TtsPhonemize examples; heavier xcframework |
+| k2-fsa/sherpa-onnx | offline TTS, many voices | Swift API for Kokoro (#1803) + iOS demo (#1812) in its changelog; `ios-swiftui/` TtsLexicon/TtsPhonemize examples; heavier |
 | AndyHCode/EchoText | packaging reference | offline iOS TTS app on sherpa-onnx |
-| Apple WWDC22 10089 + `PDFPageOverlayViewProvider` | Pencil ink over PDF pages | the canonical pattern; see landmines above |
+| Apple WWDC22 10089 + `PDFPageOverlayViewProvider` | Pencil ink over PDF pages | canonical pattern; traps in §5 |
 | joshuabourke/pdfeditorsdk | SwiftUI PDFKit + Pencil example | MIT, tiny; read, don't depend |
-| Apple `UIPencilInteraction`, Apple Pencil docs, support 120123 | gestures, hover, model compatibility | double-tap, squeeze, `UIPencilHoverPose`, `onPencilSqueeze` |
-| nate-parrott/reeeed | Swift reader mode (iOS+macOS) | alternative to our `extractArticle()`; last release 2022. exyte/ReadabilityKit is archived — skip |
+| Apple `UIPencilInteraction`, Apple Pencil docs, support 120123 / HT211029 | gestures, hover, compatibility | double-tap, squeeze, `UIPencilHoverPose`, `onPencilSqueeze` |
 | yonaskolb/XcodeGen · tuist/tuist | project generation | XcodeGen first, Tuist fallback |
-| antijingoist/opendyslexic | the reader font | still unshipped on Mac (`Resources/` has only the icon) — ship on both |
-| Hacking with Swift: AVSpeechSynthesizer highlight | the `willSpeakRangeOfSpeechString` pattern | already what `SystemAVSpeechEngine` does |
+| antijingoist/opendyslexic | reader font | still unshipped on Mac (`Resources/` has only the icon) — ship on both |
+| Hacking with Swift: AVSpeechSynthesizer highlight | `willSpeakRangeOfSpeechString` | already what `SystemAVSpeechEngine` does |
 
-## 7. NEEDS YOU
+## 8. NEEDS YOU
 
-- iPad Air model, iPadOS version, Pencil model (Settings → General → About;
-  Settings → Apple Pencil).
-- Free Personal Team (7-day re-install from the Mac) or the $99/yr program.
-- Install Xcode 26 and sign in with the Apple ID — the sign-in can't be scripted.
+- Which Pencil: **Pro** or **USB-C**? (Settings → Apple Pencil shows it.)
+- OK to update the Mac to **macOS 26.7.2** (restart; other sessions stop)?
+  Or straight to 27.2?
+- Install **Xcode 27.1** and sign in with the Apple ID; the sign-in can't be
+  scripted. Then: free Personal Team or $99 program.
+- The Core sync endpoint (§3) is a Core PR you merge; say when to open it.
