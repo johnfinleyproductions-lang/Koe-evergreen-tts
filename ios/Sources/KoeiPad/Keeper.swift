@@ -23,7 +23,7 @@ final class Keeper: ObservableObject {
         progress[bookId] = (0, steps)
         tasks[bookId] = Task { @MainActor [weak self] in
             var done = 0
-            func step() { done += 1; self?.progress[bookId] = (done, steps) }
+            let step: @MainActor () -> Void = { done += 1; self?.progress[bookId] = (done, steps) }
             do {
                 let pdfPath = detail.book.sourceUrl ?? "/api/reader/books/\(bookId)/source/source.pdf"
                 _ = try await client.cachedFile(path: pdfPath, name: "books/\(bookId)/source.pdf", mimePrefix: "application/pdf", maxBytes: 300 * 1024 * 1024)
