@@ -1,89 +1,118 @@
 import SwiftUI
+import WebKit
 
-/// Native magic-link sign-in. Core emails a link; it must be *pasted* into
-/// Koe (a tap would sign Safari in, not Koe). Done once per iPad.
+/// Sign-in, done once per iPad. Primary path: Core's own login page in a web
+/// view (Google works there); when it lands outside /auth on our server, Koe
+/// adopts the session cookies into its own jar and keeps them refreshed.
+/// Secondary path: an emailed magic link, pasted in, for when Core has an
+/// email provider configured.
 struct SignInView: View {
+    @EnvironmentObject var client: CoreClient
+    @State private var checking = false
+    @State private var showServer = false
+    @State private var showEmail = false
+    @State private var reloadToken = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("声").font(Koe.serif(26, .semibold)).foregroundStyle(Koe.shu)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sign in to Evergreen").font(Koe.serif(20, .semibold)).foregroundStyle(Koe.ink)
+                    Text("Once. Koe keeps you signed in on this iPad afterwards.").font(.footnote).foregroundStyle(Koe.ink2)
+                }
+                Spacer()
+                if checking { ProgressView().tint(Koe.shu) }
+                Button { reloadToken += 1 } label: { Image(systemName: "arrow.clockwise") }.tint(Koe.ink2)
+                Button { showEmail.toggle() } label: { Image(systemName: "envelope") }.tint(showEmail ? Koe.shu : Koe.ink2)
+                Button { showServer = true } label: { Image(systemName: "server.rack") }.tint(Koe.ink2)
+            }
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            .background(Koe.paper)
+            Divider()
+            if showEmail {
+                MagicLinkPanel()
+                Divider()
+            }
+            WebView(url: client.baseURL.appendingPathComponent("reader")) { url in
+                Task { await landed(url) }
+            }
+            .id("\(client.baseURLString)-\(reloadToken)")
+        }
+        .background(Koe.desk)
+        .sheet(isPresented: $showServer) { ServerSheet() }
+    }
+
+    private func landed(_ url: URL) async {
+        guard url.host == client.baseURL.host, !url.path.hasPrefix("/auth"), !checking else { return }
+        checking = true
+        defer { checking = false }
+        _ = await client.adoptWebCookies()
+    }
+}
+
+struct WebView: UIViewRepresentable {
+    let url: URL
+    let onNavigated: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onNavigated: onNavigated) }
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.navigationDelegate = context.coordinator
+        view.load(URLRequest(url: url))
+        return view
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onNavigated: (URL) -> Void
+        init(onNavigated: @escaping (URL) -> Void) { self.onNavigated = onNavigated }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            if let url = webView.url { onNavigated(url) }
+        }
+    }
+}
+
+/// The emailed-link path: request, copy the link from Mail, paste it here.
+struct MagicLinkPanel: View {
     @EnvironmentObject var client: CoreClient
     @State private var email = UserDefaults.standard.string(forKey: "koe.email") ?? ""
     @State private var link = ""
-    @State private var sent = false
     @State private var busy = false
     @State private var message: String?
-    @State private var showServer = false
-    @FocusState private var focus: Field?
-    enum Field { case email, link }
 
     var body: some View {
-        ZStack {
-            Koe.desk.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("声").font(Koe.serif(44, .semibold)).foregroundStyle(Koe.shu)
-                        Text("Sign in to Evergreen").font(Koe.serif(28, .semibold)).foregroundStyle(Koe.ink)
-                        Spacer()
-                        Button { showServer = true } label: { Image(systemName: "server.rack") }.tint(Koe.ink2)
-                    }
-                    Text("Once. After this Koe keeps you signed in on this iPad.")
-                        .font(Koe.serif(17)).foregroundStyle(Koe.ink2)
-
-                    step(1, "Your Evergreen email")
-                    HStack(spacing: 10) {
-                        TextField("you@example.com", text: $email)
-                            .textContentType(.emailAddress).keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .focused($focus, equals: .email)
-                            .padding(12).background(Koe.paper, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .submitLabel(.send).onSubmit { Task { await send() } }
-                        Button { Task { await send() } } label: {
-                            Text(sent ? "Send again" : "Email me a link").fontWeight(.semibold).padding(.horizontal, 6)
-                        }
-                        .buttonStyle(.borderedProminent).tint(Koe.shu)
-                        .disabled(busy || !email.contains("@"))
-                    }
-
-                    step(2, "Open the email on this iPad, then copy the link")
-                    Text("Long-press the **Sign in** button in the email and choose **Copy Link**. Don't tap it: tapping opens Safari, and Safari would get the session instead of Koe.")
-                        .font(Koe.serif(16)).foregroundStyle(Koe.ink2)
-
-                    step(3, "Paste it here")
-                    HStack(spacing: 10) {
-                        TextField("http://…/api/auth/magic-link/verify?token=…", text: $link)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                            .focused($focus, equals: .link)
-                            .padding(12).background(Koe.paper, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .submitLabel(.go).onSubmit { Task { await finish(link) } }
-                        PasteButton(payloadType: String.self) { strings in
-                            if let s = strings.first { link = s; Task { await finish(s) } }
-                        }
-                        .labelStyle(.titleAndIcon).buttonBorderShape(.capsule).tint(Koe.ink)
-                        Button { Task { await finish(link) } } label: { Text("Sign in").fontWeight(.semibold).padding(.horizontal, 6) }
-                            .buttonStyle(.borderedProminent).tint(Koe.shu)
-                            .disabled(busy || link.isEmpty)
-                    }
-
-                    if let message {
-                        HStack(alignment: .top, spacing: 8) {
-                            if busy { ProgressView().tint(Koe.shu) }
-                            Text(message).font(Koe.serif(16)).foregroundStyle(message.hasPrefix("✓") ? Koe.green : Koe.shu)
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Or sign in with an emailed link").font(Koe.serif(17, .semibold)).foregroundStyle(Koe.ink)
+            HStack(spacing: 10) {
+                TextField("you@example.com", text: $email)
+                    .textContentType(.emailAddress).keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .padding(10).background(Koe.paper, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Button { Task { await send() } } label: { Text("Email me a link").fontWeight(.semibold) }
+                    .buttonStyle(.borderedProminent).tint(Koe.shu).disabled(busy || !email.contains("@"))
+            }
+            Text("In Mail, long-press the Sign in button → Copy Link. Don't tap it (Safari would get the session, not Koe). Then paste it here.")
+                .font(.footnote).foregroundStyle(Koe.ink2)
+            HStack(spacing: 10) {
+                TextField("http://…/api/auth/magic-link/verify?token=…", text: $link)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    .padding(10).background(Koe.paper, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                PasteButton(payloadType: String.self) { strings in
+                    if let s = strings.first { link = s; Task { await finish(s) } }
                 }
-                .padding(28)
-                .frame(maxWidth: 680, alignment: .leading)
-                .frame(maxWidth: .infinity)
+                .labelStyle(.iconOnly).buttonBorderShape(.capsule).tint(Koe.ink)
+                Button { Task { await finish(link) } } label: { Text("Sign in").fontWeight(.semibold) }
+                    .buttonStyle(.borderedProminent).tint(Koe.shu).disabled(busy || link.isEmpty)
+            }
+            if let message {
+                Text(message).font(.footnote).foregroundStyle(message.hasPrefix("✓") ? Koe.green : Koe.shu)
             }
         }
-        .sheet(isPresented: $showServer) { ServerSheet() }
-        .onAppear { focus = email.isEmpty ? .email : nil }
-    }
-
-    private func step(_ n: Int, _ title: String) -> some View {
-        HStack(spacing: 10) {
-            Text(String(n)).font(.system(.footnote, design: .monospaced).weight(.bold))
-                .frame(width: 24, height: 24).background(Koe.shu.opacity(0.14), in: Circle()).foregroundStyle(Koe.shu)
-            Text(title).font(Koe.serif(19, .semibold)).foregroundStyle(Koe.ink)
-        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .background(Koe.paper2)
     }
 
     private func send() async {
@@ -91,24 +120,16 @@ struct SignInView: View {
         defer { busy = false }
         do {
             try await client.requestMagicLink(email: email.trimmingCharacters(in: .whitespaces).lowercased())
-            sent = true
-            message = "✓ Sent. Check Mail on this iPad, copy the link, and paste it below."
-            focus = .link
-        } catch {
-            message = error.localizedDescription
-        }
+            message = "✓ Sent. Check Mail on this iPad, copy the link, and paste it here."
+        } catch { message = error.localizedDescription }
     }
 
     private func finish(_ value: String) async {
         guard !value.isEmpty else { return }
         busy = true; message = "Signing in…"
         defer { busy = false }
-        do {
-            try await client.completeMagicLink(value)
-            message = "✓ Signed in."
-        } catch {
-            message = error.localizedDescription
-        }
+        do { try await client.completeMagicLink(value); message = "✓ Signed in." }
+        catch { message = error.localizedDescription }
     }
 }
 

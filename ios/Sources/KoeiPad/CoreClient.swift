@@ -85,6 +85,9 @@ final class CoreClient: ObservableObject {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw KoeError.network("No response from Evergreen.") }
         guard http.statusCode == 200 else {
+            if http.statusCode >= 500 {
+                throw KoeError.network("Evergreen can't send email right now (no email provider is configured on the server). Use the web sign-in above instead.")
+            }
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
             throw KoeError.network(message ?? "Evergreen answered HTTP \(http.statusCode).")
         }
@@ -117,6 +120,21 @@ final class CoreClient: ObservableObject {
         func urlSession(_ session: URLSession, task: URLSessionTask,
                         willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest) async -> URLRequest? { nil }
+    }
+
+    /// After a web sign-in (Google on Core's login page), copy the session
+    /// cookies from the web view's jar into the app's own persistent jar so
+    /// every later request, and the launch-time refresh, carry them.
+    func adoptWebCookies() async -> Bool {
+        let cookies = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
+        let host = baseURL.host ?? ""
+        var adopted = 0
+        for cookie in cookies where cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == host {
+            HTTPCookieStorage.shared.setCookie(cookie)
+            adopted += 1
+        }
+        guard adopted > 0 else { return false }
+        return await refreshSession()
     }
 
     func signOut() async {
