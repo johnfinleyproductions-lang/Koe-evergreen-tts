@@ -124,7 +124,8 @@ Apple ID (decided 2026-10-29; password + 2FA; if no code arrives, see xtool
 issue #407 — Advanced Data Protection — and fall back to Xcode's Accounts
 pane + `xcodebuild`) → cable the iPad, trust the Mac, turn on
 Developer Mode (Settings → Privacy & Security → Developer Mode, restarts the
-iPad) → XcodeGen project → empty KoeiPad on the device. Exit: Koe icon on
+iPad) → `ios/` package (DONE 2026-10-29: `cd ios && xtool dev build` → arm64 iOS
+`xtool/KoeiPad.app`, unsigned) → `xtool dev` signs + installs. Exit: Koe icon on
 the iPad, and it still opens after unplugging.
 
 **Phase 1 — Books companion (no Core change needed).** Sign into Core from
