@@ -40,3 +40,16 @@ extension UIColor {
 extension Color {
     init(hex: UInt32, alpha: Double = 1) { self.init(UIColor(hex: hex, alpha: alpha)) }
 }
+
+extension KoeHighlightColor {
+    /// Soft washes that stay readable under black ink, light and dark.
+    var ui: UIColor {
+        switch self {
+        case .yellow: return UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.85, green: 0.72, blue: 0.20, alpha: 0.42) : UIColor(red: 0.98, green: 0.85, blue: 0.30, alpha: 0.48) }
+        case .green:  return UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.45, green: 0.68, blue: 0.35, alpha: 0.42) : UIColor(red: 0.60, green: 0.80, blue: 0.45, alpha: 0.45) }
+        case .pink:   return UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.85, green: 0.45, blue: 0.58, alpha: 0.42) : UIColor(red: 0.97, green: 0.62, blue: 0.72, alpha: 0.45) }
+        case .blue:   return UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.40, green: 0.60, blue: 0.85, alpha: 0.42) : UIColor(red: 0.55, green: 0.72, blue: 0.95, alpha: 0.45) }
+        }
+    }
+    var swatch: Color { Color(ui.withAlphaComponent(1)) }
+}

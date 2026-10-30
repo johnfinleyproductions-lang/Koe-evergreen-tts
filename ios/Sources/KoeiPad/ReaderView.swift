@@ -15,12 +15,17 @@ struct ReaderView: View {
     @State private var pdfError: String?
     @State private var showPDF = true
     @State private var inking = false
+    @State private var markMode = false
+    @State private var showMarks = false
     @AppStorage("koe.readingPen") private var readingPen = true
+    @AppStorage("koe.markColor") private var markColorRaw = KoeHighlightColor.yellow.rawValue
+    private var markColor: KoeHighlightColor { KoeHighlightColor(rawValue: markColorRaw) ?? .yellow }
 
     var body: some View {
         VStack(spacing: 0) {
             content
-            TransportBar(player: player, book: book, chapter: chapter, showPDF: $showPDF, inking: $inking)
+            TransportBar(player: player, book: book, chapter: chapter, showPDF: $showPDF, inking: $inking,
+                         markMode: $markMode, markColorRaw: $markColorRaw, showMarks: $showMarks)
         }
         .background(Koe.readerBg)
         .modifier(PencilGestures { player.toggle() })
@@ -41,6 +46,7 @@ struct ReaderView: View {
             _ = await (load, pdf)
         }
         .onDisappear { player.stop() }
+        .sheet(isPresented: $showMarks) { MarksSheet(player: player) }
     }
 
     @ViewBuilder private var content: some View {
@@ -90,7 +96,10 @@ struct ReaderView: View {
 
     private func textPane(_ reading: Reading) -> some View {
         HighlightTextView(text: reading.sourceText, ranges: player.highlightRanges, currentIndex: player.highlightIndex,
-                          readingPen: readingPen, onTapWord: { index in
+                          readingPen: readingPen, marks: player.marks, markMode: markMode, markColor: markColor,
+                          onMark: { range in player.mark(range, color: markColor) },
+                          onUnmark: { range in player.unmark(range) },
+                          onTapWord: { index in
             player.seek(toWord: index)
         }, onPenWord: { index in
             // The reading pen: pause the voice and speak the word under the tip.
@@ -131,6 +140,9 @@ struct TransportBar: View {
     let chapter: Chapter
     @Binding var showPDF: Bool
     @Binding var inking: Bool
+    @Binding var markMode: Bool
+    @Binding var markColorRaw: String
+    @Binding var showMarks: Bool
     @State private var scrubbing = false
     @State private var scrub: Double = 0
 
@@ -168,6 +180,29 @@ struct TransportBar: View {
                 } label: {
                     Text(String(format: "%g×", player.rate)).font(.system(.subheadline, design: .monospaced).weight(.medium))
                         .frame(width: 54, height: 34).background(Koe.paper2, in: Capsule())
+                }
+                .tint(Koe.ink)
+                // Highlighter: Pencil drag marks text in the chosen colour; tap a mark to remove it.
+                HStack(spacing: 4) {
+                    Button { markMode.toggle() } label: {
+                        Image(systemName: markMode ? "highlighter" : "highlighter")
+                            .foregroundStyle(markMode ? (KoeHighlightColor(rawValue: markColorRaw) ?? .yellow).swatch : Koe.ink)
+                            .frame(width: 34, height: 34)
+                            .background(markMode ? Koe.paper : Color.clear, in: Circle())
+                    }
+                    Menu {
+                        ForEach(KoeHighlightColor.allCases) { c in
+                            Button { markColorRaw = c.rawValue; markMode = true } label: {
+                                if c.rawValue == markColorRaw { Label(c.label, systemImage: "checkmark") } else { Text(c.label) }
+                            }
+                        }
+                        Divider()
+                        Button { showMarks = true } label: { Label("Highlights…", systemImage: "list.bullet.rectangle") }
+                    } label: {
+                        Circle().fill((KoeHighlightColor(rawValue: markColorRaw) ?? .yellow).swatch).frame(width: 16, height: 16)
+                            .overlay(Circle().stroke(Koe.line, lineWidth: 1))
+                            .frame(width: 28, height: 34)
+                    }
                 }
                 .tint(Koe.ink)
                 Menu {
@@ -340,6 +375,11 @@ struct HighlightTextView: UIViewRepresentable {
     let ranges: [NSRange]
     let currentIndex: Int
     var readingPen = true
+    var marks: [KoeTextHighlight] = []
+    var markMode = false
+    var markColor: KoeHighlightColor = .yellow
+    var onMark: ((NSRange) -> Void)? = nil
+    var onUnmark: ((NSRange) -> Void)? = nil
     let onTapWord: (Int) -> Void
     var onPenWord: ((Int) -> Void)? = nil
 
@@ -372,14 +412,18 @@ struct HighlightTextView: UIViewRepresentable {
         context.coordinator.band = band
         context.coordinator.readingPen = readingPen
         context.coordinator.ranges = ranges
+        context.coordinator.configure(markMode: markMode, markColor: markColor, onMark: onMark, onUnmark: onUnmark)
         context.coordinator.apply(text: text, to: view)
+        context.coordinator.setMarks(marks, in: view)
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.readingPen = readingPen
+        context.coordinator.configure(markMode: markMode, markColor: markColor, onMark: onMark, onUnmark: onUnmark)
         if context.coordinator.ranges != ranges { context.coordinator.ranges = ranges; context.coordinator.resetHighlight(in: view) }
-        if context.coordinator.text != text { context.coordinator.apply(text: text, to: view) }
+        if context.coordinator.text != text { context.coordinator.apply(text: text, to: view); context.coordinator.setMarks(marks, in: view, force: true) }
+        else { context.coordinator.setMarks(marks, in: view) }
         context.coordinator.highlight(index: currentIndex, in: view)
     }
 
@@ -393,7 +437,55 @@ struct HighlightTextView: UIViewRepresentable {
         private var lastRange: NSRange?
         private var lastIndex = -1
         private var lastPenIndex = -1
+        private var marks: [KoeTextHighlight] = []
+        private var markMode = false
+        private var markColor: KoeHighlightColor = .yellow
+        private var onMark: ((NSRange) -> Void)?
+        private var onUnmark: ((NSRange) -> Void)?
+        private var anchorOffset: Int?
+        private var preview: NSRange?
         init(onTapWord: @escaping (Int) -> Void, onPenWord: ((Int) -> Void)?) { self.onTapWord = onTapWord; self.onPenWord = onPenWord }
+
+        func configure(markMode: Bool, markColor: KoeHighlightColor, onMark: ((NSRange) -> Void)?, onUnmark: ((NSRange) -> Void)?) {
+            self.markMode = markMode; self.markColor = markColor; self.onMark = onMark; self.onUnmark = onUnmark
+        }
+
+        /// Paint every mark. Cheap enough to redo whenever the set changes.
+        func setMarks(_ next: [KoeTextHighlight], in view: UITextView, force: Bool = false) {
+            guard force || next != marks else { return }
+            marks = next
+            let storage = view.textStorage
+            let all = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: all)
+            for m in marks where NSMaxRange(m.range) <= storage.length { storage.addAttribute(.backgroundColor, value: m.color.ui, range: m.range) }
+            if let current = lastRange, NSMaxRange(current) <= storage.length { storage.addAttribute(.backgroundColor, value: Koe.highlightFill, range: current) }
+            storage.endEditing()
+        }
+
+        /// Put a range back to its mark colour (or nothing) after a wash leaves it.
+        private func restoreBackground(_ range: NSRange, in view: UITextView) {
+            let storage = view.textStorage
+            guard NSMaxRange(range) <= storage.length, range.length > 0 else { return }
+            storage.removeAttribute(.backgroundColor, range: range)
+            for m in marks {
+                let overlap = NSIntersectionRange(m.range, range)
+                if overlap.length > 0 { storage.addAttribute(.backgroundColor, value: m.color.ui, range: overlap) }
+            }
+        }
+
+        private func offset(at point: CGPoint, in view: UITextView) -> Int? {
+            guard let position = view.closestPosition(to: point) else { return nil }
+            return view.offset(from: view.beginningOfDocument, to: position)
+        }
+
+        /// Snap a raw pencil span to whole words.
+        private func snapped(_ a: Int, _ b: Int) -> NSRange {
+            let lo = min(a, b), hi = max(a, b)
+            let start = ranges.first(where: { NSMaxRange($0) > lo })?.location ?? lo
+            let end = ranges.last(where: { $0.location < hi }).map { NSMaxRange($0) } ?? hi
+            return NSRange(location: min(start, end), length: max(0, end - start))
+        }
 
         private func wordIndex(at point: CGPoint, in view: UITextView) -> Int? {
             guard let position = view.closestPosition(to: point) else { return nil }
@@ -427,8 +519,31 @@ struct HighlightTextView: UIViewRepresentable {
         }
 
         @objc func penDragged(_ gesture: UIPanGestureRecognizer) {
-            guard let view = gesture.view as? UITextView, readingPen else { return }
+            guard let view = gesture.view as? UITextView else { return }
             let point = gesture.location(in: view)
+            if markMode {
+                switch gesture.state {
+                case .began:
+                    anchorOffset = offset(at: point, in: view); preview = nil
+                case .changed:
+                    guard let anchor = anchorOffset, let now = offset(at: point, in: view) else { return }
+                    let next = snapped(anchor, now)
+                    guard next != preview else { return }
+                    if let old = preview { restoreBackground(old, in: view) }
+                    if next.length > 0, NSMaxRange(next) <= view.textStorage.length {
+                        view.textStorage.addAttribute(.backgroundColor, value: markColor.ui.withAlphaComponent(0.7), range: next)
+                    }
+                    preview = next
+                case .ended:
+                    if let done = preview { restoreBackground(done, in: view); if done.length > 0 { onMark?(done) } }
+                    anchorOffset = nil; preview = nil
+                default:
+                    if let old = preview { restoreBackground(old, in: view) }
+                    anchorOffset = nil; preview = nil
+                }
+                return
+            }
+            guard readingPen else { return }
             switch gesture.state {
             case .began, .changed:
                 moveBand(to: point, in: view)
@@ -454,9 +569,7 @@ struct HighlightTextView: UIViewRepresentable {
         }
 
         func resetHighlight(in view: UITextView) {
-            if let old = lastRange, NSMaxRange(old) <= view.textStorage.length {
-                view.textStorage.removeAttribute(.backgroundColor, range: old)
-            }
+            if let old = lastRange, NSMaxRange(old) <= view.textStorage.length { restoreBackground(old, in: view) }
             lastRange = nil; lastIndex = -1
         }
 
@@ -465,9 +578,7 @@ struct HighlightTextView: UIViewRepresentable {
             lastIndex = index
             let storage = view.textStorage
             let length = storage.length
-            if let old = lastRange, NSMaxRange(old) <= length {
-                storage.removeAttribute(.backgroundColor, range: old)
-            }
+            if let old = lastRange, NSMaxRange(old) <= length { restoreBackground(old, in: view) }
             lastRange = nil
             guard index >= 0, index < ranges.count else { return }
             let range = ranges[index]
@@ -493,6 +604,7 @@ struct HighlightTextView: UIViewRepresentable {
             let point = gesture.location(in: view)
             guard let position = view.closestPosition(to: point) else { return }
             let offset = view.offset(from: view.beginningOfDocument, to: position)
+            if markMode, let hit = marks.first(where: { $0.location <= offset && offset < $0.upperBound }) { onUnmark?(hit.range); return }
             if let hit = ranges.firstIndex(where: { $0.location <= offset && offset < NSMaxRange($0) }) { onTapWord(hit); return }
             if let next = ranges.firstIndex(where: { $0.location >= offset }) { onTapWord(next) }
         }
@@ -513,6 +625,43 @@ struct PencilGestures: ViewModifier {
                 .onPencilSqueeze { phase in if case .ended = phase { action() } }
         } else {
             content
+        }
+    }
+}
+
+
+// MARK: - Highlights list
+
+struct MarksSheet: View {
+    @ObservedObject var player: ChapterPlayer
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if player.marks.isEmpty {
+                    ContentUnavailableView("No highlights yet", systemImage: "highlighter",
+                                           description: Text("Turn on the highlighter and drag the Pencil across the text."))
+                } else {
+                    List {
+                        ForEach(player.marks) { mark in
+                            Button {
+                                player.seek(toMark: mark); dismiss()
+                            } label: {
+                                HStack(alignment: .top, spacing: 12) {
+                                    RoundedRectangle(cornerRadius: 3).fill(mark.color.swatch).frame(width: 6).padding(.vertical, 2)
+                                    Text(player.excerpt(mark)).font(Koe.serif(16)).foregroundStyle(Koe.ink).multilineTextAlignment(.leading)
+                                }
+                            }
+                        }
+                        .onDelete { offsets in
+                            for i in offsets.sorted(by: >) where i < player.marks.count { player.unmark(player.marks[i].range) }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Highlights")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 }

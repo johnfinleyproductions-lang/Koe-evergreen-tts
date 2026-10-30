@@ -26,6 +26,9 @@ final class ChapterPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         didSet { audio?.rate = rate; kokoro?.updateRate(Double(rate)); save(); updateNowPlaying() }
     }
     @Published var reading: Reading?
+    /// Colour marks on this chapter's text, same model and fingerprint store as the Mac.
+    @Published var marks: [KoeTextHighlight] = []
+    private var documentID = ""
 
     private(set) var book: BookInfo?
     private(set) var chapter: Chapter?
@@ -70,6 +73,8 @@ final class ChapterPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 let start = $0.range.lowerBound.utf16Offset(in: text)
                 return NSRange(location: start, length: max(0, $0.range.upperBound.utf16Offset(in: text) - start))
             }
+            documentID = KoeHighlightStore.documentID(for: text)
+            marks = KoeHighlightStore.load(documentID: documentID, textLength: textLength)
             hasRecording = reading.audioUrl != nil && !timed.isEmpty
             audioPath = reading.audioUrl
             kokoroWord = min(max(0, place?.kokoroWord ?? 0), max(0, words.count - 1))
@@ -223,6 +228,30 @@ final class ChapterPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         preparing = false
         save(force: true)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    // MARK: Marks
+
+    func mark(_ range: NSRange, color: KoeHighlightColor) {
+        marks = KoeHighlightOperations.applying(color: color, to: range, in: marks, textLength: textLength)
+        KoeHighlightStore.save(marks, documentID: documentID, textLength: textLength)
+    }
+
+    func unmark(_ range: NSRange) {
+        marks = KoeHighlightOperations.applying(color: nil, to: range, in: marks, textLength: textLength)
+        KoeHighlightStore.save(marks, documentID: documentID, textLength: textLength)
+    }
+
+    func excerpt(_ mark: KoeTextHighlight) -> String {
+        guard let text = reading?.sourceText, let r = Range(mark.range, in: text) else { return "" }
+        let s = String(text[r]).replacingOccurrences(of: "\n", with: " ")
+        return s.count > 140 ? String(s.prefix(140)) + "…" : s
+    }
+
+    /// Jump the voice to the first word of a mark.
+    func seek(toMark mark: KoeTextHighlight) {
+        let ranges = highlightRanges
+        if let i = ranges.firstIndex(where: { NSMaxRange($0) > mark.location }) { seek(toWord: i) }
     }
 
     // MARK: Kokoro
