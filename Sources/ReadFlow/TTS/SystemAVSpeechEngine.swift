@@ -29,7 +29,7 @@ import AVFoundation
 /// This engine owns its own playback (the synthesizer). It never touches a
 /// shared audio file. Word callbacks come straight from the synthesizer's
 /// boundary delegate, so timing is exact and no high-frequency timer is needed.
-final class SystemAVSpeechEngine: NSObject, TTSEngine, AVSpeechSynthesizerDelegate {
+final class SystemAVSpeechEngine: NSObject, TTSEngine, AVSpeechSynthesizerDelegate, @unchecked Sendable {
 
     // MARK: TTSEngine identity
 
