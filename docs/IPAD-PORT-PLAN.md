@@ -134,7 +134,9 @@ sign-in state instead of showing the login. Away from home: put the
 think box's Tailscale address in Server; the session cookie is per host, so
 that host needs one Google sign-in of its own.
 
-Order: A → B → C, each installed and tried on the iPad before the next.
+Order: A → B → C. **All three built 2026-10-30** (commits aa25db2 Save to Board
++ board merge, 0b95aba Pencil Pro roll/haptics, fed7d16+8ea7b70 offline); one
+iPad install carries them. Mac rebuild needed for the board merge (shared file).
 
 ## 5. iPad landmines (verified)
 
