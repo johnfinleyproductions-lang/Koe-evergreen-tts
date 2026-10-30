@@ -126,6 +126,16 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 
 ## 6. Phases
 
+**Status 2026-10-29 (end of day 1).** Phase 0 done. Phase 1 done except Core-side
+resume (native route lacks `progress`) and per-word page spans. Phase 3 slice 1
+done: drag-to-select + colour menu, quick highlighter, Highlights list, reading
+pen (opt-in), hover ruler, squeeze/double-tap play-pause, PencilKit ink per
+page. Phase 2 (Boards/Library/Canvas via a Core sync endpoint) not started.
+Install recipe: Tyler force-closes Koe + unlocks → `xtool dev build --sign
+--ipa && xtool install --usb xtool/KoeiPad.ipa` (live app id is the
+double-prefixed one; never `xtool dev`, never uninstall without a probe).
+Sign-in = Google on Core's web page inside Koe (Core has no email provider).
+
 **Phase 0 — Tooling (an hour, nothing to download but xtool).** Xcode 16.3
 as-is → `brew install xtool-org/tap/xtool` → `xtool setup` with Tyler's real
 Apple ID (decided 2026-10-29; password + 2FA; if no code arrives, see xtool
