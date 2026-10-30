@@ -78,11 +78,20 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
   iPad, signature expires every 7 days (re-run from Xcode), no iCloud/push.
   Revisit the $99/yr program (1-year signatures, TestFlight over the air)
   after Phase 1, once the companion is daily-use. Xcode 16.3 can go.
-- **Project.** SwiftPM cannot build an iOS app bundle. Add `ios/project.yml`
-  for **XcodeGen** with an iPad app target depending on the local package
-  (`packages: KoeCore: path: ..`). Known open issue #1575 (Aug 2025, 2.44.1)
-  about local packages → fallback is a hand-made `.xcodeproj` committed once,
-  or Tuist.
+- **Build driver: xtool first (no .xcodeproj at all).** `xtool` (MIT, active)
+  builds a SwiftPM package straight into an iOS app, signs it, installs and
+  launches it on the iPad from the terminal — the same shape as
+  `scripts/build_app.sh` on the Mac. Xcode.app must still be installed and
+  launched once for the iOS SDK + toolchain; its GUI is never used after that.
+  Login: free Apple ID = password + 2FA through private Apple APIs (xtool's
+  docs suggest a throwaway Apple ID; the Personal Team then belongs to that
+  ID, which is fine for installing on Tyler's iPad), or an API key with the
+  paid program. Fallback if xtool chokes on our package: `xcodebuild` +
+  `xcrun devicectl` from the CLI with an XcodeGen project (`ios/project.yml`;
+  watch open issue #1575 about local packages).
+- **7-day re-sign without the cable: AltServer** (altstoreio/AltStore) on the
+  Mac re-signs free-account apps in the background over Wi-Fi. Add after
+  Phase 1 if the weekly re-run from Xcode gets annoying.
 - **Package split.** `Package.swift` → `platforms: [.macOS(.v13), .iOS(.v17)]`;
   targets `KoeCore` (neutral), `KoeMac` (today's executable), `KoeiPad`.
   `scripts/build_app.sh` unchanged.
@@ -149,7 +158,9 @@ Split View beside Notes or Safari as a listen-along.
 | Apple WWDC22 10089 + `PDFPageOverlayViewProvider` | Pencil ink over PDF pages | canonical pattern; traps in §5 |
 | joshuabourke/pdfeditorsdk | SwiftUI PDFKit + Pencil example | MIT, tiny; read, don't depend |
 | Apple `UIPencilInteraction`, Apple Pencil docs, support 120123 / HT211029 | gestures, hover, compatibility | double-tap, squeeze, `UIPencilHoverPose`, `onPencilSqueeze` |
-| yonaskolb/XcodeGen · tuist/tuist | project generation | XcodeGen first, Tuist fallback |
+| xtool-org/xtool | SwiftPM → signed iOS app → iPad, all CLI | MIT, 14k★, commit 2026-10-28; needs Xcode installed for the SDK; free-ID login uses private APIs |
+| altstoreio/AltStore (AltServer) | weekly Wi-Fi re-sign of free-account apps | Mac menu-bar app; takes the Apple ID |
+| yonaskolb/XcodeGen · tuist/tuist | project generation, only if xtool fails | XcodeGen first, Tuist fallback |
 | antijingoist/opendyslexic | reader font | still unshipped on Mac (`Resources/` has only the icon) — ship on both |
 | Hacking with Swift: AVSpeechSynthesizer highlight | `willSpeakRangeOfSpeechString` | already what `SystemAVSpeechEngine` does |
 
