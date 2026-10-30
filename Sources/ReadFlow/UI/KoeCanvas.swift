@@ -59,6 +59,8 @@ final class CanvasStore: ObservableObject {
     func save() {
         if let d = try? JSONEncoder().encode(notes) { defaults.set(d, forKey: notesKey) }
         if let d = try? JSONEncoder().encode(links) { defaults.set(d, forKey: linksKey) }
+        NotificationCenter.default.post(name: .koeStateChanged, object: notesKey)
+        NotificationCenter.default.post(name: .koeStateChanged, object: linksKey)
     }
 
     @discardableResult

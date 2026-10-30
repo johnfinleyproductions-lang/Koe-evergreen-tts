@@ -24,7 +24,9 @@ import AVFoundation
 @MainActor
 final class ReaderHUDModel: ObservableObject {
     // --- Manager-facing surface (unchanged contract) ---
-    @Published var words: [Word] = []
+    @Published var words: [Word] = [] {
+        didSet { recomputeSentences() }
+    }
     @Published var currentIndex: Int?
     @Published var state: TTSPlaybackState = .idle
 
@@ -42,11 +44,14 @@ final class ReaderHUDModel: ObservableObject {
     @Published var koeView: KoeView = .capture   // first launch shows onboarding
     @Published var sourceLabel: String = "selection"
     @Published var title: String = "Reading"
+    @Published var sourceText: String = ""
+    @Published var highlights: [KoeTextHighlight] = []
+    @Published var selectedTextRange: NSRange?
     @Published var elapsed: TimeInterval = 0
     @Published var total: TimeInterval = 0
-    @Published var highlightOn: Bool = true
     @Published var engineLabel: String = "System Voice"
     @Published var voiceGlyph: String = "声"
+    private(set) var highlightDocumentID: String = "empty"
 
     // --- Callbacks bridged out to the manager by ReaderHUDWindow ---
     var onTogglePlayPause: (() -> Void)?
@@ -54,15 +59,116 @@ final class ReaderHUDModel: ObservableObject {
     var onRestart: (() -> Void)?
     var onStop: (() -> Void)?
     var onClose: (() -> Void)?
+    /// Tap a word to read from there (click-to-read-from-here). Bridged to the
+    /// manager by ReaderHUDWindow.
+    var onSeekToWord: ((Int) -> Void)?
 
     init() {}
 
     var palette: KoePalette { .forAppearance(appearance) }
     var isPlaying: Bool { state == .speaking || state == .preparing }
 
+    var currentWordRange: NSRange? {
+        guard let currentIndex,
+              currentIndex >= 0,
+              currentIndex < words.count,
+              !sourceText.isEmpty
+        else { return nil }
+        return NSRange(words[currentIndex].range, in: sourceText)
+    }
+
+    func loadHighlightDocument(_ text: String) {
+        sourceText = text
+        selectedTextRange = nil
+        highlightDocumentID = KoeHighlightStore.documentID(for: text)
+        highlights = KoeHighlightStore.load(
+            documentID: highlightDocumentID,
+            textLength: (text as NSString).length
+        )
+    }
+
+    func applyHighlight(_ color: KoeHighlightColor) {
+        guard let selection = selectedTextRange else { return }
+        highlights = KoeHighlightOperations.applying(
+            color: color,
+            to: selection,
+            in: highlights,
+            textLength: (sourceText as NSString).length
+        )
+        persistHighlights()
+        selectedTextRange = nil
+    }
+
+    func clearHighlightInSelection() {
+        guard let selection = selectedTextRange else { return }
+        highlights = KoeHighlightOperations.applying(
+            color: nil,
+            to: selection,
+            in: highlights,
+            textLength: (sourceText as NSString).length
+        )
+        persistHighlights()
+        selectedTextRange = nil
+    }
+
+    private func persistHighlights() {
+        KoeHighlightStore.save(
+            highlights,
+            documentID: highlightDocumentID,
+            textLength: (sourceText as NSString).length
+        )
+    }
+
     /// Extra leading per line to approximate the requested line-height multiplier.
     var resolvedLineSpacing: CGFloat {
         max(2, CGFloat(fontSize) * CGFloat(max(0, lineHeight - 1.0)))
+    }
+
+    // The reader lays out one live view per word inside a custom `Layout`, which
+    // cannot be lazy. For normal reads that's fine; for a very long article/PDF it
+    // would realize tens of thousands of subviews and hang. `displayedWords` caps
+    // that: below the threshold it renders everything (unchanged); above it, only a
+    // sliding window around the current word is realized — you follow the highlight,
+    // so the window centered on it is exactly what you read. Each `Word` keeps its
+    // original `.index`, so highlight position and scroll-to-current still line up.
+    static let maxInlineWords = 2500
+    static let wordWindowRadius = 800
+    var displayedWords: [Word] {
+        let all = words
+        guard all.count > Self.maxInlineWords else { return all }
+        let center = currentIndex ?? 0
+        let lo = max(0, center - Self.wordWindowRadius)
+        let hi = min(all.count, center + Self.wordWindowRadius)
+        return Array(all[lo..<hi])
+    }
+
+    // --- Sentence membership (drives the dual-highlight sentence band) ---
+    /// Sentence id per word (parallel to `words`); recomputed when `words` change.
+    private(set) var sentenceIds: [Int] = []
+    private func recomputeSentences() {
+        var ids: [Int] = []
+        ids.reserveCapacity(words.count)
+        var sid = 0
+        for word in words {
+            ids.append(sid)
+            if Self.endsSentence(word.text) { sid += 1 }
+        }
+        sentenceIds = ids
+    }
+    /// A word ends a sentence when, after stripping trailing quotes/brackets, its
+    /// last character is sentence-terminal. (An abbreviation may occasionally split
+    /// a band early — cosmetic only; the band is a reading aid, not a parser.)
+    private static func endsSentence(_ word: String) -> Bool {
+        var s = Substring(word)
+        while let last = s.last, "\")]}'’”»".contains(last) { s = s.dropLast() }
+        guard let last = s.last else { return false }
+        return ".!?…".contains(last)
+    }
+    /// Whether `wordIndex` is in the same sentence as the current word.
+    func inCurrentSentence(_ wordIndex: Int) -> Bool {
+        guard let ci = currentIndex, ci >= 0, ci < sentenceIds.count,
+              wordIndex >= 0, wordIndex < sentenceIds.count else { return false }
+        return sentenceIds[wordIndex] == sentenceIds[ci]
     }
 }
 
@@ -135,6 +241,7 @@ struct WrappingHStack: Layout {
 private struct KoeWordChip: View {
     let text: String
     let position: Position
+    let inCurrentSentence: Bool
     let font: Font
     let letterSpacing: CGFloat
     let palette: KoePalette
@@ -142,18 +249,35 @@ private struct KoeWordChip: View {
     enum Position { case past, current, upcoming }
 
     var body: some View {
+        // Fixed metrics: constant padding + no weight change, so the paragraph
+        // NEVER reflows as the highlight moves (the current word used to grow +
+        // pad, shifting text under the reader's eye). Emphasis is carried by the
+        // background pill and text color only.
         Text(text)
             .font(font)
             .tracking(letterSpacing)
-            .fontWeight(position == .current ? .semibold : .regular)
             .foregroundStyle(color)
-            .padding(.horizontal, position == .current ? 4 : 0)
+            .padding(.horizontal, 4)
             .padding(.vertical, 1)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(position == .current ? palette.highlightFill : Color.clear)
-            )
-            .animation(.easeOut(duration: 0.09), value: position == .current)
+            .background {
+                ZStack {
+                    // Sentence band — a soft wash behind the whole current
+                    // sentence, extended into the 6pt inter-word gap so a run
+                    // reads as one bar within a line. Helps you keep your place.
+                    if inCurrentSentence {
+                        Rectangle()
+                            .fill(palette.sentenceBand)
+                            .padding(.horizontal, -3)
+                    }
+                    // Current word — the strong pill on top.
+                    if position == .current {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(palette.highlightFill)
+                    }
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: position)
+            .animation(.easeOut(duration: 0.12), value: inCurrentSentence)
     }
 
     private var color: Color {
@@ -176,15 +300,17 @@ private struct KoeWordColumn: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 WrappingHStack(horizontalSpacing: 6, verticalSpacing: model.resolvedLineSpacing) {
-                    ForEach(model.words, id: \.index) { word in
+                    ForEach(model.displayedWords, id: \.index) { word in
                         KoeWordChip(
                             text: word.text,
                             position: position(for: word.index),
-                            font: KoeFont.mincho(CGFloat(model.fontSize)),
+                            inCurrentSentence: model.inCurrentSentence(word.index),
+                            font: KoeFont.reader(model.fontName, CGFloat(model.fontSize)),
                             letterSpacing: CGFloat(model.letterSpacing),
                             palette: model.palette
                         )
                         .id(word.index)
+                        .onTapGesture { model.onSeekToWord?(word.index) }
                     }
                 }
                 .frame(maxWidth: maxWidth, alignment: .leading)
@@ -256,6 +382,21 @@ private struct KoeReadingView: View {
                             .foregroundStyle(palette.ink)
                     }
                     Spacer()
+                    Button {
+                        model.koeView = .capture
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: "highlighter").font(.system(size: 12))
+                            Text("Highlight & export").font(KoeFont.gothic(12.5, .medium))
+                        }
+                        .foregroundStyle(palette.ink3)
+                        .padding(.horizontal, 13).padding(.vertical, 8)
+                        .background(Capsule().fill(palette.s3))
+                        .overlay(Capsule().stroke(palette.line, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.words.isEmpty)
+
                     Button {
                         let text = model.words.map(\.text).joined(separator: " ")
                         if !text.isEmpty {
@@ -372,26 +513,37 @@ private struct KoeCaptureView: View {
         .shadow(color: Color(hex: 0x281E0F, alpha: 0.5), radius: 30, y: 20)
     }
 
-    // The highlighted selection (rose-tinted box; current word highlights live)
+    // Native selectable text. The moving read-aloud highlight is temporary;
+    // user-applied color highlights are stored against the source document.
     private var selectionBox: some View {
-        WrappingHStack(horizontalSpacing: 6, verticalSpacing: 10) {
-            ForEach(model.words, id: \.index) { w in
-                KoeWordChip(text: w.text,
-                            position: position(w.index),
-                            font: KoeFont.mincho(CGFloat(model.fontSize)),
-                            letterSpacing: CGFloat(model.letterSpacing),
-                            palette: page)
-                    .id(w.index)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 5).fill(model.highlightOn ? page.selectionFill : .clear))
-        .overlay(RoundedRectangle(cornerRadius: 5)
-            .stroke(model.highlightOn ? Color(hex: 0xC0432D, alpha: 0.30) : .clear, lineWidth: 1))
+        KoeHighlightingTextView(
+            documentID: model.highlightDocumentID,
+            text: model.sourceText,
+            highlights: model.highlights,
+            currentWordRange: model.currentWordRange,
+            fontName: model.fontName,
+            fontSize: model.fontSize,
+            lineHeight: model.lineHeight,
+            letterSpacing: model.letterSpacing,
+            onSeekToCharacterOffset: { offset in
+                if let wordIndex = WordTokenizer.wordIndex(
+                    forUTF16Offset: offset,
+                    in: model.sourceText,
+                    words: model.words
+                ) {
+                    model.onSeekToWord?(wordIndex)
+                }
+            },
+            onApplyHighlight: { color in model.applyHighlight(color) },
+            onClearHighlight: { model.clearHighlightInSelection() },
+            selection: $model.selectedTextRange
+        )
+        .frame(minHeight: 210, idealHeight: 300, maxHeight: 360)
+        .background(RoundedRectangle(cornerRadius: 5).fill(page.selectionFill.opacity(0.38)))
+        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(hex: 0xC0432D, alpha: 0.24), lineWidth: 1))
     }
 
-    // Listen · Highlight · Add to canvas · Save to board
+    // Listen · Add to canvas · Export · Save to board
     private var captureChip: some View {
         HStack(spacing: 9) {
             Button { model.onTogglePlayPause?() } label: {
@@ -404,26 +556,24 @@ private struct KoeCaptureView: View {
             }
             .buttonStyle(.plain)
 
-            Rectangle().fill(page.line).frame(width: 1, height: 22)
-
-            Button { model.highlightOn.toggle() } label: {
-                HStack(spacing: 7) {
-                    RoundedRectangle(cornerRadius: 3).fill(page.shu).frame(width: 13, height: 13)
-                    Text("Highlight").font(KoeFont.gothic(12, .medium))
-                }
-                .foregroundStyle(model.highlightOn ? Color(hex: 0xA3361F) : page.soft)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(Capsule().fill(model.highlightOn ? page.tintShu : page.s3))
-                .overlay(Capsule().stroke(model.highlightOn ? Color(hex: 0xD98C7A) : page.line, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
             Button { addToCanvas() } label: {
                 HStack(spacing: 7) { Text("⌗"); Text("Add to canvas").font(KoeFont.gothic(12, .medium)) }
                     .foregroundStyle(page.ink3).padding(.horizontal, 12).padding(.vertical, 7)
                     .background(Capsule().fill(page.s3)).overlay(Capsule().stroke(page.line, lineWidth: 1))
             }
             .buttonStyle(.plain)
+
+            Button { exportHighlights() } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 11))
+                    Text("Export PDF + RTF").font(KoeFont.gothic(11.5, .bold))
+                }
+                .foregroundStyle(page.ink3).padding(.horizontal, 11).padding(.vertical, 7)
+                .background(Capsule().fill(page.s3)).overlay(Capsule().stroke(page.line, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.sourceText.isEmpty)
+            .help("Export a clean PDF and an editable RTF")
 
             Menu {
                 ForEach(BoardStore.shared.boards) { b in Button(b.name) { saveToBoard(b.id) } }
@@ -442,10 +592,19 @@ private struct KoeCaptureView: View {
         .shadow(color: Color(hex: 0x281E0F, alpha: 0.30), radius: 16, y: 10)
     }
 
-    private func position(_ index: Int) -> KoeWordChip.Position {
-        guard let cur = model.currentIndex else { return .upcoming }
-        if index == cur { return .current }
-        return index < cur ? .past : .upcoming
+    private func exportHighlights() {
+        do {
+            if let result = try KoeHighlightExporter.export(
+                title: model.title,
+                text: model.sourceText,
+                highlights: model.highlights,
+                fontName: model.fontName
+            ) {
+                KoeHighlightExporter.showCompletion(result)
+            }
+        } catch {
+            KoeHighlightExporter.showError(error)
+        }
     }
 
     private func addToCanvas() {
@@ -476,11 +635,12 @@ private struct KoeSidebar: View {
             .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 16)
 
             VStack(spacing: 3) {
-                navButton(.capture, "Capture", "doc.text")
+                navButton(.capture, "Capture & highlight", "doc.text")
                 navButton(.read, "The Quiet Hour", "book")
                 navButton(.canvas, "Idea Canvas", "square.grid.2x2")
                 navButton(.boards, "Boards", "tray.full")
                 navButton(.library, "Library", "books.vertical")
+                navButton(.books, "Books", "book.closed")
             }
 
             Spacer()
@@ -500,7 +660,9 @@ private struct KoeSidebar: View {
             .padding(.bottom, 10)
 
             // "Now reading" card
-            VStack(alignment: .leading, spacing: 9) {
+            if model.koeView == .books {
+                KoeBookNowReading(palette: palette)
+            } else { VStack(alignment: .leading, spacing: 9) {
                 Text("NOW READING").font(KoeFont.gothic(9.5, .medium)).tracking(2).foregroundStyle(palette.mute)
                 HStack(spacing: 8) {
                     BlinkDot(color: palette.shu, active: model.isPlaying)
@@ -514,6 +676,7 @@ private struct KoeSidebar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 11).fill(palette.s1))
             .overlay(RoundedRectangle(cornerRadius: 11).stroke(palette.line, lineWidth: 1))
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 18)
         .frame(width: 216)
@@ -789,11 +952,12 @@ struct KoeRootView: View {
                     case .canvas:  KoeCanvasView(model: model)
                     case .boards:  KoeBoardsView(model: model)
                     case .library: KoeLibraryView()
+                    case .books: KoeBooksView(model: model)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            KoePlayerBar(model: model)
+            if model.koeView != .books { KoePlayerBar(model: model) }
         }
         .background(model.palette.s1)
         .frame(minWidth: 920, minHeight: 620)

@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import CoreText
 
 // MARK: - Which main view is showing
 
@@ -26,6 +27,7 @@ enum KoeView: String {
     case canvas    // Idea Canvas — dot-grid whiteboard with sticky notes
     case boards    // Boards — named collections of saved reading snippets
     case library   // Library — write & synthesize workspace
+    case books     // Original PDFs with cached chapter narration
 }
 
 // MARK: - Light / dark
@@ -74,6 +76,9 @@ struct KoePalette {
 
     /// The current-word highlight fill (vermilion at 26%).
     var highlightFill: Color { Color(hex: 0xC0432D, alpha: appearanceIsDark ? 0.34 : 0.26) }
+    /// Soft wash behind the whole CURRENT sentence (the dual-highlight reading
+    /// aid). Clearly lighter than `highlightFill` so the current word still leads.
+    var sentenceBand: Color { Color(hex: 0xC0432D, alpha: appearanceIsDark ? 0.16 : 0.10) }
     /// Captured-selection tint.
     var selectionFill: Color { Color(hex: 0xC0432D, alpha: 0.15) }
 
@@ -124,6 +129,27 @@ enum KoeFont {
     /// Mincho serif — headings & reading body. Hiragino Mincho ProN ships on macOS.
     static func mincho(_ size: CGFloat, bold: Bool = false) -> Font {
         Font.custom(bold ? "HiraMinProN-W6" : "HiraMinProN-W3", size: size)
+    }
+
+    /// The reading-body font. Honors the user's `fontName` preference (e.g.
+    /// "OpenDyslexic", the dyslexia face) and falls back to Mincho when it's
+    /// unset. `Font.custom` degrades silently to the system font if the named
+    /// face isn't installed/registered, so this never breaks the reader.
+    static func reader(_ name: String, _ size: CGFloat) -> Font {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return mincho(size) }
+        return Font.custom(trimmed, size: size)
+    }
+
+    /// Register any .otf/.ttf faces bundled under Resources so a preference like
+    /// "OpenDyslexic" resolves without requiring a system-wide install. No-op when
+    /// none are present. Call once at launch.
+    static func registerBundledFonts() {
+        for ext in ["otf", "ttf"] {
+            for url in Bundle.main.urls(forResourcesWithExtension: ext, subdirectory: nil) ?? [] {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
     }
 
     enum GothicWeight { case regular, medium, bold }
