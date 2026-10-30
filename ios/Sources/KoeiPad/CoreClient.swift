@@ -33,7 +33,7 @@ final class CoreClient: ObservableObject {
         return s
     }
 
-    private static let allowedPrefixes = ["/api/reader/books", "/api/readings/", "/api/auth/get-session",
+    private static let allowedPrefixes = ["/api/reader/books", "/api/reader/koe-state", "/api/readings/", "/api/auth/get-session",
                                           "/api/auth/sign-in/magic-link", "/api/auth/magic-link/verify"]
 
     private func endpoint(_ path: String) throws -> URL {
@@ -160,6 +160,26 @@ final class CoreClient: ObservableObject {
         guard http.statusCode == 200 else { throw KoeError.http(http.statusCode) }
         guard data.count <= 32 * 1024 * 1024 else { throw KoeError.tooLarge }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    // MARK: Raw JSON (koe-state sync)
+
+    struct RawReply { let status: Int; let data: Data }
+
+    func rawJSON(_ method: String, _ path: String, body: Any? = nil) async throws -> RawReply {
+        var request = URLRequest(url: try endpoint(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            guard JSONSerialization.isValidJSONObject(body) else { throw KoeError.network("Bad JSON body") }
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw KoeError.network("No response from Evergreen.") }
+        if http.statusCode == 401 { signedIn = false; throw KoeError.signIn }
+        return RawReply(status: http.statusCode, data: data)
     }
 
     // MARK: Books

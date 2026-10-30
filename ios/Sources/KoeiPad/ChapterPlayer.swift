@@ -51,6 +51,7 @@ final class ChapterPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var lastCoreSave = Date.distantPast
     private var lastLocalSave = Date.distantPast
     private var remoteCommandsInstalled = false
+    private var pullObserver: NSObjectProtocol?
 
     // MARK: Load
 
@@ -75,6 +76,13 @@ final class ChapterPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
             documentID = KoeHighlightStore.documentID(for: text)
             marks = KoeHighlightStore.load(documentID: documentID, textLength: textLength)
+            pullObserver = NotificationCenter.default.addObserver(forName: .koeStateDidPull, object: nil, queue: .main) { [weak self] note in
+                guard (note.object as? String) == KoeStateKeys.highlights else { return }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.marks = KoeHighlightStore.load(documentID: self.documentID, textLength: self.textLength)
+                }
+            }
             hasRecording = reading.audioUrl != nil && !timed.isEmpty
             audioPath = reading.audioUrl
             kokoroWord = min(max(0, place?.kokoroWord ?? 0), max(0, words.count - 1))
@@ -221,6 +229,7 @@ final class ChapterPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        if let pullObserver { NotificationCenter.default.removeObserver(pullObserver); self.pullObserver = nil }
         generation &+= 1
         kokoro?.stop(); kokoro = nil
         stopClock()
