@@ -66,6 +66,8 @@ final class LibraryStore: ObservableObject {
     func save() {
         if let d = try? JSONEncoder().encode(notebooks) { defaults.set(d, forKey: notebooksKey) }
         if let d = try? JSONEncoder().encode(pulled) { defaults.set(d, forKey: pulledKey) }
+        NotificationCenter.default.post(name: .koeStateChanged, object: notebooksKey)
+        NotificationCenter.default.post(name: .koeStateChanged, object: pulledKey)
     }
     private func migrateOrSeed() {
         if let d = defaults.data(forKey: legacyKey), let old = try? JSONDecoder().decode([LegacySection].self, from: d), !old.isEmpty {

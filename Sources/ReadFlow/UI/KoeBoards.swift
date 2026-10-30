@@ -58,6 +58,7 @@ final class BoardStore: ObservableObject {
 
     func save() {
         if let d = try? JSONEncoder().encode(boards) { defaults.set(d, forKey: key) }
+        NotificationCenter.default.post(name: .koeStateChanged, object: key)
     }
 
     @discardableResult

@@ -59,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // preference resolves without a system install. No-op if none are bundled.
         KoeFont.registerBundledFonts()
 
+        // Phase 2: share Boards, Canvas, Library, highlights and positions through Core.
+        KoeStateSync.shared.start()
+
         // Build the object graph (order matters: HUD before manager).
         settings = Settings.shared
         hud = ReaderHUDWindow(settings: settings)
@@ -136,6 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { hud?.showWindow() }
         return true
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task { await KoeStateSync.shared.pullAll() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

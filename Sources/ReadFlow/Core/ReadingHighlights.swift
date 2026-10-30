@@ -173,5 +173,6 @@ enum KoeHighlightStore {
         if let data = try? JSONEncoder().encode(archive) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }
+        NotificationCenter.default.post(name: .koeStateChanged, object: defaultsKey)
     }
 }

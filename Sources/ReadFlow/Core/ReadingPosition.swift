@@ -35,6 +35,7 @@ enum ReadingPositionStore {
         if dict.count > maxEntries { dict = [:] }
         dict[contentHash(text)] = index
         UserDefaults.standard.set(dict, forKey: key)
+        NotificationCenter.default.post(name: .koeStateChanged, object: key)
     }
 
     /// Forget `text`'s position (called when it's read to the end).
@@ -42,5 +43,6 @@ enum ReadingPositionStore {
         var dict = UserDefaults.standard.dictionary(forKey: key) as? [String: Int] ?? [:]
         dict.removeValue(forKey: contentHash(text))
         UserDefaults.standard.set(dict, forKey: key)
+        NotificationCenter.default.post(name: .koeStateChanged, object: key)
     }
 }
