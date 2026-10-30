@@ -1,4 +1,5 @@
 import PDFKit
+import PencilKit
 import SwiftUI
 import UIKit
 
@@ -13,20 +14,25 @@ struct ReaderView: View {
     @State private var pdfURL: URL?
     @State private var pdfError: String?
     @State private var showPDF = true
+    @State private var inking = false
+    @AppStorage("koe.readingPen") private var readingPen = true
 
     var body: some View {
         VStack(spacing: 0) {
             content
-            TransportBar(player: player, book: book, chapter: chapter, showPDF: $showPDF)
+            TransportBar(player: player, book: book, chapter: chapter, showPDF: $showPDF, inking: $inking)
         }
         .background(Koe.readerBg)
+        .modifier(PencilGestures { player.toggle() })
         .navigationTitle(chapter.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { withAnimation { showPDF.toggle() } } label: {
-                    Image(systemName: showPDF ? "doc.text.image" : "doc.plaintext")
-                }.tint(Koe.ink2)
+                Menu {
+                    Toggle(isOn: $readingPen) { Label("Reading pen", systemImage: "pencil.and.outline") }
+                    Toggle(isOn: Binding(get: { showPDF }, set: { v in withAnimation { showPDF = v } })) { Label("Show pages", systemImage: "doc.text.image") }
+                } label: { Image(systemName: "slider.horizontal.3") }
+                .tint(Koe.ink2)
             }
         }
         .task {
@@ -67,7 +73,7 @@ struct ReaderView: View {
 
     @ViewBuilder private var pdfPane: some View {
         if let pdfURL {
-            PDFPageView(url: pdfURL, page: player.page) { manualPage in
+            PDFPageView(url: pdfURL, page: player.page, bookId: book.id, inking: inking) { manualPage in
                 player.setPage(manualPage, manual: true)
             }
             .background(Koe.readerBg)
@@ -83,9 +89,16 @@ struct ReaderView: View {
     }
 
     private func textPane(_ reading: Reading) -> some View {
-        HighlightTextView(text: reading.sourceText, ranges: player.highlightRanges, currentIndex: player.highlightIndex) { index in
+        HighlightTextView(text: reading.sourceText, ranges: player.highlightRanges, currentIndex: player.highlightIndex,
+                          readingPen: readingPen, onTapWord: { index in
             player.seek(toWord: index)
-        }
+        }, onPenWord: { index in
+            // The reading pen: pause the voice and speak the word under the tip.
+            if player.isPlaying { player.pause() }
+            let range = player.highlightRanges[index]
+            if let r = Range(range, in: reading.sourceText) { PenVoice.shared.speak(String(reading.sourceText[r])) }
+            player.seek(toWord: index)
+        })
         .background(Koe.paper)
         .overlay(alignment: .top) {
             if player.preparing {
@@ -117,6 +130,7 @@ struct TransportBar: View {
     let book: BookInfo
     let chapter: Chapter
     @Binding var showPDF: Bool
+    @Binding var inking: Bool
     @State private var scrubbing = false
     @State private var scrub: Double = 0
 
@@ -193,10 +207,15 @@ struct TransportBar: View {
                             .font(.system(.subheadline, design: .monospaced)).foregroundStyle(Koe.ink2).frame(minWidth: 86)
                         Button { player.turnPage(1) } label: { Image(systemName: "chevron.right") }
                         Button { player.resumeFollowing() } label: {
-                            Image(systemName: player.followPages ? "text.line.first.and.arrowtriangle.forward" : "text.line.first.and.arrowtriangle.forward")
+                            Image(systemName: "text.line.first.and.arrowtriangle.forward")
                                 .foregroundStyle(player.followPages ? Koe.shu : Koe.faint)
                         }
                         .help("Follow the narration")
+                        Button { inking.toggle() } label: {
+                            Image(systemName: inking ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
+                                .foregroundStyle(inking ? Koe.shu : Koe.ink)
+                        }
+                        .help("Ink on the page with the Pencil")
                     }
                     .tint(Koe.ink)
                 }
@@ -213,17 +232,20 @@ struct TransportBar: View {
 struct PDFPageView: UIViewRepresentable {
     let url: URL
     let page: Int
+    let bookId: String
+    let inking: Bool
     let onManualPage: (Int) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onManualPage: onManualPage) }
+    func makeCoordinator() -> Coordinator { Coordinator(bookId: bookId, onManualPage: onManualPage) }
 
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
         view.displayMode = .singlePage
         view.displayDirection = .horizontal
         view.autoScales = true
-        view.usePageViewController(false)        // keep touches available for PencilKit overlays later
+        view.usePageViewController(false)        // before the document, or touches scroll instead of draw
         view.backgroundColor = .clear
+        view.pageOverlayViewProvider = context.coordinator
         view.document = PDFDocument(url: url)
         context.coordinator.attach(view)
         context.coordinator.show(page, in: view)
@@ -233,13 +255,62 @@ struct PDFPageView: UIViewRepresentable {
     func updateUIView(_ view: PDFView, context: Context) {
         if view.document?.documentURL != url { view.document = PDFDocument(url: url) }
         context.coordinator.show(page, in: view)
+        context.coordinator.setInking(inking, in: view)
     }
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, PDFPageOverlayViewProvider, PKCanvasViewDelegate {
+        let bookId: String
         let onManualPage: (Int) -> Void
         private var programmatic = false
         private var observer: NSObjectProtocol?
-        init(onManualPage: @escaping (Int) -> Void) { self.onManualPage = onManualPage }
+        private var canvases: [Int: PKCanvasView] = [:]
+        private var pageOf: [ObjectIdentifier: Int] = [:]
+        private var inking = false
+        private let toolPicker = PKToolPicker()
+        init(bookId: String, onManualPage: @escaping (Int) -> Void) { self.bookId = bookId; self.onManualPage = onManualPage }
+
+        // One PencilKit canvas per page, pencil-only so fingers keep scrolling/zooming.
+        func pdfView(_ view: PDFView, overlayViewFor page: PDFPage) -> UIView? {
+            guard let doc = view.document else { return nil }
+            let index = doc.index(for: page) + 1
+            if let existing = canvases[index] { return existing }
+            let canvas = PKCanvasView()
+            canvas.backgroundColor = .clear
+            canvas.isOpaque = false
+            canvas.drawingPolicy = .pencilOnly
+            canvas.delegate = self
+            canvas.drawing = InkStore.load(bookId, page: index)
+            canvas.isUserInteractionEnabled = inking
+            canvases[index] = canvas
+            pageOf[ObjectIdentifier(canvas)] = index
+            if inking { toolPicker.addObserver(canvas) }
+            return canvas
+        }
+
+        func pdfView(_ view: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {
+            guard let canvas = overlayView as? PKCanvasView, let index = pageOf[ObjectIdentifier(canvas)] else { return }
+            InkStore.save(canvas.drawing, bookId, page: index)
+        }
+
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            guard let index = pageOf[ObjectIdentifier(canvasView)] else { return }
+            InkStore.save(canvasView.drawing, bookId, page: index)
+        }
+
+        func setInking(_ on: Bool, in view: PDFView) {
+            guard on != inking else { return }
+            inking = on
+            for canvas in canvases.values {
+                canvas.isUserInteractionEnabled = on
+                if on { toolPicker.addObserver(canvas) } else { toolPicker.removeObserver(canvas) }
+            }
+            if on, let doc = view.document, let current = view.currentPage, let canvas = canvases[doc.index(for: current) + 1] {
+                toolPicker.setVisible(true, forFirstResponder: canvas)
+                canvas.becomeFirstResponder()
+            } else {
+                for canvas in canvases.values { toolPicker.setVisible(false, forFirstResponder: canvas); canvas.resignFirstResponder() }
+            }
+        }
         func attach(_ view: PDFView) {
             observer = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak self, weak view] _ in
                 guard let self, let view, !self.programmatic, let doc = view.document, let current = view.currentPage else { return }
@@ -268,9 +339,11 @@ struct HighlightTextView: UIViewRepresentable {
     let text: String
     let ranges: [NSRange]
     let currentIndex: Int
+    var readingPen = true
     let onTapWord: (Int) -> Void
+    var onPenWord: ((Int) -> Void)? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator(onTapWord: onTapWord) }
+    func makeCoordinator() -> Coordinator { Coordinator(onTapWord: onTapWord, onPenWord: onPenWord) }
 
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
@@ -281,12 +354,30 @@ struct HighlightTextView: UIViewRepresentable {
         view.alwaysBounceVertical = true
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
         view.addGestureRecognizer(tap)
+        // Fingers scroll; the Pencil is a reading pen. Pencil drags never scroll.
+        view.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue),
+                                                       NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+        let pen = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.penDragged(_:)))
+        pen.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pen.maximumNumberOfTouches = 1
+        view.addGestureRecognizer(pen)
+        let hover = UIHoverGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.hovered(_:)))
+        view.addGestureRecognizer(hover)
+        let band = UIView()
+        band.backgroundColor = Koe.highlightFill.withAlphaComponent(0.45)
+        band.layer.cornerRadius = 6
+        band.isUserInteractionEnabled = false
+        band.isHidden = true
+        view.addSubview(band)
+        context.coordinator.band = band
+        context.coordinator.readingPen = readingPen
         context.coordinator.ranges = ranges
         context.coordinator.apply(text: text, to: view)
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.readingPen = readingPen
         if context.coordinator.ranges != ranges { context.coordinator.ranges = ranges; context.coordinator.resetHighlight(in: view) }
         if context.coordinator.text != text { context.coordinator.apply(text: text, to: view) }
         context.coordinator.highlight(index: currentIndex, in: view)
@@ -294,11 +385,62 @@ struct HighlightTextView: UIViewRepresentable {
 
     final class Coordinator: NSObject {
         let onTapWord: (Int) -> Void
+        let onPenWord: ((Int) -> Void)?
         var ranges: [NSRange] = []
         var text = ""
+        var readingPen = true
+        weak var band: UIView?
         private var lastRange: NSRange?
         private var lastIndex = -1
-        init(onTapWord: @escaping (Int) -> Void) { self.onTapWord = onTapWord }
+        private var lastPenIndex = -1
+        init(onTapWord: @escaping (Int) -> Void, onPenWord: ((Int) -> Void)?) { self.onTapWord = onTapWord; self.onPenWord = onPenWord }
+
+        private func wordIndex(at point: CGPoint, in view: UITextView) -> Int? {
+            guard let position = view.closestPosition(to: point) else { return nil }
+            let offset = view.offset(from: view.beginningOfDocument, to: position)
+            if let hit = ranges.firstIndex(where: { $0.location <= offset && offset < NSMaxRange($0) }) { return hit }
+            return nil
+        }
+
+        /// A soft band on the line under the pen tip (hover on the M2 iPad Air,
+        /// or while dragging): the reading ruler.
+        private func moveBand(to point: CGPoint, in view: UITextView) {
+            guard let band else { return }
+            let layout = view.layoutManager
+            let inset = view.textContainerInset
+            let local = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+            let glyph = layout.glyphIndex(for: local, in: view.textContainer)
+            var line = layout.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
+            line.origin.y += inset.top
+            line.origin.x = inset.left - 6
+            line.size.width = view.bounds.width - inset.left - inset.right + 12
+            band.frame = line.insetBy(dx: 0, dy: -2)
+            band.isHidden = false
+        }
+
+        @objc func hovered(_ gesture: UIHoverGestureRecognizer) {
+            guard let view = gesture.view as? UITextView, readingPen else { band?.isHidden = true; return }
+            switch gesture.state {
+            case .began, .changed: moveBand(to: gesture.location(in: view), in: view)
+            default: band?.isHidden = true
+            }
+        }
+
+        @objc func penDragged(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view as? UITextView, readingPen else { return }
+            let point = gesture.location(in: view)
+            switch gesture.state {
+            case .began, .changed:
+                moveBand(to: point, in: view)
+                if let index = wordIndex(at: point, in: view), index != lastPenIndex {
+                    lastPenIndex = index
+                    onPenWord?(index)
+                }
+            default:
+                lastPenIndex = -1
+                band?.isHidden = true
+            }
+        }
 
         func apply(text: String, to view: UITextView) {
             self.text = text
@@ -353,6 +495,24 @@ struct HighlightTextView: UIViewRepresentable {
             let offset = view.offset(from: view.beginningOfDocument, to: position)
             if let hit = ranges.firstIndex(where: { $0.location <= offset && offset < NSMaxRange($0) }) { onTapWord(hit); return }
             if let next = ranges.firstIndex(where: { $0.location >= offset }) { onTapWord(next) }
+        }
+    }
+}
+
+
+// MARK: - Pencil gestures
+
+/// Double-tap (Pencil 2 / Pro) and squeeze (Pencil Pro) toggle play/pause.
+/// The USB-C Pencil has neither; the on-screen button still works.
+struct PencilGestures: ViewModifier {
+    let action: () -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 17.5, *) {
+            content
+                .onPencilDoubleTap { _ in action() }
+                .onPencilSqueeze { phase in if case .ended = phase { action() } }
+        } else {
+            content
         }
     }
 }
