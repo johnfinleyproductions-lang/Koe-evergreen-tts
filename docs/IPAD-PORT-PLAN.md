@@ -61,12 +61,17 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
   identities, no Apple ID in Xcode. Tyler's iPhone 16 is paired; the iPad is not.
 - **Toolchain rule: the installed Xcode must be at least as new as the iPad's
   OS.** Two paths; **Path A chosen 2026-10-29**:
-  - **Path A (now): iPad stays on 26.5.2, Mac stays on macOS 26.2, install
-    Xcode 26.6.** Xcode 26.6 requires macOS Tahoe 26.2 or later (exactly what
-    the Mac runs), ships the iPadOS 26.5 SDK, and needs **no Mac restart**.
-    The App Store only offers 27.1, so download `Xcode_26.6.xip` from
-    developer.apple.com/download/all (sign in with the Apple ID, free account
-    is fine), expand it, drag to /Applications (replacing 16.3).
+  - **Path A (now, no download at all): iPad on 26.5.2, Mac on macOS 26.2,
+    the already-installed Xcode 16.3 + xtool.** Verified 2026-10-29: Xcode 16.3
+    passes its first-launch check, has the iOS 18.4 SDK, and after a 3-line
+    concurrency fix the whole package builds with its Swift 6.1 as well as the
+    CLT's 6.2.3. Apps built against the 18.4 SDK run on iPadOS 26.5.2. Run
+    xtool with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` rather
+    than switching `xcode-select`, so the Mac app keeps building with the CLT's
+    Swift 6.2.3. Limits: no iOS 26-only APIs in the iPad target until the
+    toolchain moves on; `xtool launch` is broken on iOS 17+ (issue #44) — tap
+    the icon. Upgrade later: Xcode 26.6 (needs macOS ≥ 26.2, no restart) or
+    Path B.
   - **Path B (later): iPad → iPadOS 27 needs Xcode 27.1, which requires macOS
     26.6+.** Software Update offers macOS 26.7.2 (7.3 GB) and 27.2 (11.1 GB);
     take 26.7.2 first (same major, lowest risk to the Koe signing cert,
@@ -113,8 +118,11 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 
 ## 6. Phases
 
-**Phase 0 — Tooling (half a day, mostly downloads).** Xcode 26.6 on the
-current macOS 26.2 (Path A) → Apple ID (Personal Team) → cable the iPad, trust the Mac, turn on
+**Phase 0 — Tooling (an hour, nothing to download but xtool).** Xcode 16.3
+as-is → `brew install xtool-org/tap/xtool` → `xtool setup` with Tyler's real
+Apple ID (decided 2026-10-29; password + 2FA; if no code arrives, see xtool
+issue #407 — Advanced Data Protection — and fall back to Xcode's Accounts
+pane + `xcodebuild`) → cable the iPad, trust the Mac, turn on
 Developer Mode (Settings → Privacy & Security → Developer Mode, restarts the
 iPad) → XcodeGen project → empty KoeiPad on the device. Exit: Koe icon on
 the iPad, and it still opens after unplugging.
@@ -167,8 +175,9 @@ Split View beside Notes or Safari as a listen-along.
 ## 8. NEEDS YOU
 
 - Which Pencil: **Pro** or **USB-C**? (Settings → Apple Pencil shows it.)
-- Download and install **Xcode 26.6** (Path A) and sign in with the Apple ID;
-  the download and sign-in can't be scripted. Signing = free Personal Team
-  (decided). Keep the iPad on 26.5.2 and switch off its automatic updates.
+- Run `brew install xtool-org/tap/xtool` (Claude is not allowed to install
+  external code) and `xtool setup` with the real Apple ID (interactive 2FA).
+  Signing = free Personal Team (decided). Keep the iPad on 26.5.2 and switch
+  off its automatic updates.
 - Later, as one maintenance window: macOS 26.7.2 → Xcode 27.1 → then iPadOS 27.
 - The Core sync endpoint (§3) is a Core PR you merge; say when to open it.
