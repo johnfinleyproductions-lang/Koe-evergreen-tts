@@ -82,6 +82,8 @@ final class KoeBookConnection: NSObject, WKNavigationDelegate {
             guard let self, (try? await self.metadata(book)) != nil else { return }
             self.loginWindow?.orderOut(nil); self.loginWindow = nil; self.webView = nil; self.connectingBook = nil
             self.onConnected?()
+            // The same sign-in session carries Boards/Canvas/Library sync: seed and pull right away.
+            await KoeStateSync.shared.pullAll(force: true)
         }
     }
 }

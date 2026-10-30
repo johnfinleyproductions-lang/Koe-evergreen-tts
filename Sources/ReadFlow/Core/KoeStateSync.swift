@@ -8,6 +8,7 @@
 //
 import Foundation
 import WebKit
+import os
 
 @MainActor
 final class KoeStateSync {
@@ -19,6 +20,7 @@ final class KoeStateSync {
     private var observer: NSObjectProtocol?
     private var busy = false
     private(set) var lastError: String?
+    private let log = Logger(subsystem: "com.readflow.app", category: "sync")
 
     private init() {
         let config = URLSessionConfiguration.ephemeral
@@ -67,6 +69,13 @@ final class KoeStateSync {
             reload(entry.key)
             // Our overlay changed the merged document: publish it, last writer wins.
             if !KoeStateLocal.isEqual(merged, doc.value) { await push(entry.key, base: nil) }
+        }
+        // Seed: documents this Mac holds that the server has never seen (first sync, or a
+        // key added since). Without this, boards made before the store existed never leave.
+        let remoteKeys = Set(index.map(\.key))
+        for key in KoeStateKeys.all where !remoteKeys.contains(key) && KoeStateLocal.value(forKey: key) != nil {
+            log.notice("seed \(key, privacy: .public)")
+            await push(key, base: .some(nil))
         }
     }
 
@@ -131,7 +140,9 @@ final class KoeStateSync {
         guard let url = endpoint(nil) else { return nil }
         await useOwnSignInSession()
         var request = URLRequest(url: url); request.setValue("application/json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { log.notice("index: no reply"); return nil }
+        log.notice("index: HTTP \(http.statusCode, privacy: .public)")
+        guard http.statusCode == 200 else { lastError = "koe-state index: HTTP \(http.statusCode)"; return nil }
         return try? JSONDecoder().decode(IndexResponse.self, from: data).keys
     }
 
@@ -159,13 +170,15 @@ final class KoeStateSync {
         guard let (reply, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return .unavailable }
         switch http.statusCode {
         case 200:
-            guard let doc = try? JSONDecoder().decode(IndexEntry.self, from: reply) else { return .unavailable }
+            guard let doc = try? JSONDecoder().decode(IndexEntry.self, from: reply) else { log.notice("put \(key, privacy: .public): bad reply"); return .unavailable }
+            log.notice("put \(key, privacy: .public): saved rev \(doc.revision, privacy: .public)")
             return .saved(doc.revision)
         case 409:
             guard let doc = try? JSONDecoder().decode(Document.self, from: reply) else { return .unavailable }
             return .conflict(doc.revision, doc.value.value)
         default:
             lastError = "koe-state \(key): HTTP \(http.statusCode)"
+            log.notice("put \(key, privacy: .public): HTTP \(http.statusCode, privacy: .public)")
             return .unavailable
         }
     }

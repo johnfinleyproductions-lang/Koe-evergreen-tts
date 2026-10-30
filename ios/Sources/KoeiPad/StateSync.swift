@@ -50,6 +50,12 @@ final class StateSync: ObservableObject {
                 NotificationCenter.default.post(name: .koeStateDidPull, object: entry.key)
                 if !KoeStateLocal.isEqual(merged, doc.value.value) { await push(entry.key, useBase: false) }
             }
+            // Seed: documents this iPad holds that the server has never seen (highlights made
+            // before the store existed). The Mac does the same for its boards and canvas.
+            let remoteKeys = Set(entries.map(\.key))
+            for key in KoeStateKeys.all where !remoteKeys.contains(key) && KoeStateLocal.value(forKey: key) != nil {
+                await push(key, useBase: false)
+            }
             lastPulled = Date()
         } catch {
             lastError = error.localizedDescription
