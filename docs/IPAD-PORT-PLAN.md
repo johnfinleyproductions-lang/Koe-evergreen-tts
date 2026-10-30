@@ -23,7 +23,7 @@ no camera scanning. Those stay on the Mac.
     haptics, Find My. Every Pencil feature below works.
   - Pencil (USB-C): hover and tilt only. No pressure, no double-tap, no
     squeeze. Gesture features below fall back to on-screen buttons.
-- Which Pencil Tyler has is still unknown → §7.
+- Tyler has the **Pencil Pro** (confirmed 2026-10-29): every gesture below works.
 
 ## 2. What carries over (measured on the repo, 33 Swift files, 14 AppKit)
 
