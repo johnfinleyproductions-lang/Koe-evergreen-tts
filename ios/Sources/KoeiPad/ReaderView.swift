@@ -17,7 +17,7 @@ struct ReaderView: View {
     @State private var inking = false
     @State private var markMode = false
     @State private var showMarks = false
-    @AppStorage("koe.readingPen") private var readingPen = true
+    @AppStorage("koe.readingPen2") private var readingPen = false
     @AppStorage("koe.markColor") private var markColorRaw = KoeHighlightColor.yellow.rawValue
     private var markColor: KoeHighlightColor { KoeHighlightColor(rawValue: markColorRaw) ?? .yellow }
 
@@ -34,7 +34,7 @@ struct ReaderView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Toggle(isOn: $readingPen) { Label("Reading pen", systemImage: "pencil.and.outline") }
+                    Toggle(isOn: $readingPen) { Label("Reading pen (drag speaks words)", systemImage: "pencil.and.outline") }
                     Toggle(isOn: Binding(get: { showPDF }, set: { v in withAnimation { showPDF = v } })) { Label("Show pages", systemImage: "doc.text.image") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                 .tint(Koe.ink2)
@@ -97,7 +97,7 @@ struct ReaderView: View {
     private func textPane(_ reading: Reading) -> some View {
         HighlightTextView(text: reading.sourceText, ranges: player.highlightRanges, currentIndex: player.highlightIndex,
                           readingPen: readingPen, marks: player.marks, markMode: markMode, markColor: markColor,
-                          onMark: { range in player.mark(range, color: markColor) },
+                          onMark: { range, color in player.mark(range, color: color); markColorRaw = color.rawValue },
                           onUnmark: { range in player.unmark(range) },
                           onTapWord: { index in
             player.seek(toWord: index)
@@ -378,7 +378,7 @@ struct HighlightTextView: UIViewRepresentable {
     var marks: [KoeTextHighlight] = []
     var markMode = false
     var markColor: KoeHighlightColor = .yellow
-    var onMark: ((NSRange) -> Void)? = nil
+    var onMark: ((NSRange, KoeHighlightColor) -> Void)? = nil
     var onUnmark: ((NSRange) -> Void)? = nil
     let onTapWord: (Int) -> Void
     var onPenWord: ((Int) -> Void)? = nil
@@ -403,6 +403,9 @@ struct HighlightTextView: UIViewRepresentable {
         view.addGestureRecognizer(pen)
         let hover = UIHoverGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.hovered(_:)))
         view.addGestureRecognizer(hover)
+        let editMenu = UIEditMenuInteraction(delegate: context.coordinator)
+        view.addInteraction(editMenu)
+        context.coordinator.editMenu = editMenu
         let band = UIView()
         band.backgroundColor = Koe.highlightFill.withAlphaComponent(0.45)
         band.layer.cornerRadius = 6
@@ -427,9 +430,12 @@ struct HighlightTextView: UIViewRepresentable {
         context.coordinator.highlight(index: currentIndex, in: view)
     }
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UIEditMenuInteractionDelegate {
         let onTapWord: (Int) -> Void
         let onPenWord: ((Int) -> Void)?
+        weak var editMenu: UIEditMenuInteraction?
+        private var pendingSelection: NSRange?
+        private weak var pendingView: UITextView?
         var ranges: [NSRange] = []
         var text = ""
         var readingPen = true
@@ -440,13 +446,13 @@ struct HighlightTextView: UIViewRepresentable {
         private var marks: [KoeTextHighlight] = []
         private var markMode = false
         private var markColor: KoeHighlightColor = .yellow
-        private var onMark: ((NSRange) -> Void)?
+        private var onMark: ((NSRange, KoeHighlightColor) -> Void)?
         private var onUnmark: ((NSRange) -> Void)?
         private var anchorOffset: Int?
         private var preview: NSRange?
         init(onTapWord: @escaping (Int) -> Void, onPenWord: ((Int) -> Void)?) { self.onTapWord = onTapWord; self.onPenWord = onPenWord }
 
-        func configure(markMode: Bool, markColor: KoeHighlightColor, onMark: ((NSRange) -> Void)?, onUnmark: ((NSRange) -> Void)?) {
+        func configure(markMode: Bool, markColor: KoeHighlightColor, onMark: ((NSRange, KoeHighlightColor) -> Void)?, onUnmark: ((NSRange) -> Void)?) {
             self.markMode = markMode; self.markColor = markColor; self.onMark = onMark; self.onUnmark = onUnmark
         }
 
@@ -521,9 +527,13 @@ struct HighlightTextView: UIViewRepresentable {
         @objc func penDragged(_ gesture: UIPanGestureRecognizer) {
             guard let view = gesture.view as? UITextView else { return }
             let point = gesture.location(in: view)
-            if markMode {
+            if !readingPen || markMode {
+                // Drag = select whole words. Quick mode lays the colour down on lift;
+                // otherwise a menu offers the colours, Read from here, Remove.
+                let wash = markMode ? markColor.ui.withAlphaComponent(0.7) : Koe.highlightFill.withAlphaComponent(0.5)
                 switch gesture.state {
                 case .began:
+                    clearPendingSelection(in: view)
                     anchorOffset = offset(at: point, in: view); preview = nil
                 case .changed:
                     guard let anchor = anchorOffset, let now = offset(at: point, in: view) else { return }
@@ -531,11 +541,17 @@ struct HighlightTextView: UIViewRepresentable {
                     guard next != preview else { return }
                     if let old = preview { restoreBackground(old, in: view) }
                     if next.length > 0, NSMaxRange(next) <= view.textStorage.length {
-                        view.textStorage.addAttribute(.backgroundColor, value: markColor.ui.withAlphaComponent(0.7), range: next)
+                        view.textStorage.addAttribute(.backgroundColor, value: wash, range: next)
                     }
                     preview = next
                 case .ended:
-                    if let done = preview { restoreBackground(done, in: view); if done.length > 0 { onMark?(done) } }
+                    guard let done = preview, done.length > 0 else { anchorOffset = nil; preview = nil; return }
+                    if markMode {
+                        restoreBackground(done, in: view); onMark?(done, markColor)
+                    } else {
+                        pendingSelection = done; pendingView = view
+                        editMenu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
+                    }
                     anchorOffset = nil; preview = nil
                 default:
                     if let old = preview { restoreBackground(old, in: view) }
@@ -543,7 +559,6 @@ struct HighlightTextView: UIViewRepresentable {
                 }
                 return
             }
-            guard readingPen else { return }
             switch gesture.state {
             case .began, .changed:
                 moveBand(to: point, in: view)
@@ -597,6 +612,43 @@ struct HighlightTextView: UIViewRepresentable {
             guard !visible.contains(rect) else { return }
             let target = max(0, rect.midY - view.bounds.height * 0.4)
             view.setContentOffset(CGPoint(x: 0, y: min(target, max(0, view.contentSize.height - view.bounds.height))), animated: true)
+        }
+
+        private func clearPendingSelection(in view: UITextView) {
+            if let sel = pendingSelection { restoreBackground(sel, in: view) }
+            pendingSelection = nil
+        }
+
+        func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
+                                 suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard let sel = pendingSelection, let view = pendingView else { return nil }
+            var children: [UIMenuElement] = KoeHighlightColor.allCases.map { color in
+                UIAction(title: color.label, image: UIImage(systemName: "circle.fill")?
+                    .withTintColor(color.ui.withAlphaComponent(1), renderingMode: .alwaysOriginal)) { [weak self] _ in
+                    guard let self else { return }
+                    self.restoreBackground(sel, in: view); self.pendingSelection = nil
+                    self.onMark?(sel, color)
+                }
+            }
+            children.append(UIAction(title: "Read from here", image: UIImage(systemName: "play.fill")) { [weak self] _ in
+                guard let self else { return }
+                self.restoreBackground(sel, in: view); self.pendingSelection = nil
+                if let i = self.ranges.firstIndex(where: { NSMaxRange($0) > sel.location }) { self.onTapWord(i) }
+            })
+            if marks.contains(where: { NSIntersectionRange($0.range, sel).length > 0 }) {
+                children.append(UIAction(title: "Remove", image: UIImage(systemName: "eraser"), attributes: .destructive) { [weak self] _ in
+                    guard let self else { return }
+                    self.restoreBackground(sel, in: view); self.pendingSelection = nil
+                    self.onUnmark?(sel)
+                })
+            }
+            return UIMenu(options: .displayInline, children: children)
+        }
+
+        func editMenuInteraction(_ interaction: UIEditMenuInteraction, willDismissMenuFor configuration: UIEditMenuConfiguration,
+                                 animator: UIEditMenuInteractionAnimating) {
+            // Tapped away without choosing: drop the selection wash.
+            if let view = pendingView { animator.addCompletion { [weak self] in self?.clearPendingSelection(in: view) } }
         }
 
         @objc func tapped(_ gesture: UITapGestureRecognizer) {
