@@ -419,10 +419,9 @@ struct HighlightTextView: UIViewRepresentable {
         // Fingers scroll; the Pencil is a reading pen. Pencil drags never scroll.
         view.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue),
                                                        NSNumber(value: UITouch.TouchType.indirect.rawValue)]
-        let pen = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.penDragged(_:)))
-        pen.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
-        pen.maximumNumberOfTouches = 1
+        let pen = PencilDragRecognizer(target: context.coordinator, action: #selector(Coordinator.penDragged(_:)))
         view.addGestureRecognizer(pen)
+        context.coordinator.haptics = PencilHaptics(view: view)
         let hover = UIHoverGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.hovered(_:)))
         view.addGestureRecognizer(hover)
         let editMenu = UIEditMenuInteraction(delegate: context.coordinator)
@@ -476,6 +475,12 @@ struct HighlightTextView: UIViewRepresentable {
         var onSaveToBoard: ((NSRange, UUID) -> Void)?
         private var anchorOffset: Int?
         private var preview: NSRange?
+        var haptics: PencilHaptics?
+        private var rollBase: CGFloat = 0
+        private var rollSteps = 0
+        private var rolled = false
+        private var dragColor: KoeHighlightColor = .yellow
+        private static let rollStep: CGFloat = .pi / 6     // 30° per colour
         init(onTapWord: @escaping (Int) -> Void, onPenWord: ((Int) -> Void)?) { self.onTapWord = onTapWord; self.onPenWord = onPenWord }
 
         func configure(markMode: Bool, markColor: KoeHighlightColor, onMark: ((NSRange, KoeHighlightColor) -> Void)?, onUnmark: ((NSRange) -> Void)?) {
@@ -550,21 +555,37 @@ struct HighlightTextView: UIViewRepresentable {
             }
         }
 
-        @objc func penDragged(_ gesture: UIPanGestureRecognizer) {
+        @objc func penDragged(_ gesture: PencilDragRecognizer) {
             guard let view = gesture.view as? UITextView else { return }
-            let point = gesture.location(in: view)
+            let point = gesture.point
             if !readingPen || markMode {
                 // Drag = select whole words. Quick mode lays the colour down on lift;
+                // a barrel roll (Pencil Pro) picks the colour and skips the menu;
                 // otherwise a menu offers the colours, Read from here, Remove.
-                let wash = markMode ? markColor.ui.withAlphaComponent(0.7) : Koe.highlightFill.withAlphaComponent(0.5)
                 switch gesture.state {
                 case .began:
                     clearPendingSelection(in: view)
                     anchorOffset = offset(at: point, in: view); preview = nil
+                    rollBase = gesture.rollAngle; rollSteps = 0; rolled = false; dragColor = markColor
                 case .changed:
                     guard let anchor = anchorOffset, let now = offset(at: point, in: view) else { return }
+                    // Barrel roll: every 30° steps the colour; the wash shows it live.
+                    var delta = gesture.rollAngle - rollBase
+                    while delta > .pi { delta -= 2 * .pi }
+                    while delta < -.pi { delta += 2 * .pi }
+                    let steps = Int((delta / Self.rollStep).rounded(.towardZero))
+                    var recolour = false
+                    if steps != rollSteps {
+                        rollSteps = steps; rolled = true; recolour = true
+                        let all = KoeHighlightColor.allCases
+                        let base = all.firstIndex(of: markColor) ?? 0
+                        dragColor = all[((base + steps) % all.count + all.count) % all.count]
+                        haptics?.tick(at: point)
+                    }
                     let next = snapped(anchor, now)
-                    guard next != preview else { return }
+                    guard next != preview || recolour else { return }
+                    if next != preview { haptics?.tick(at: point) }
+                    let wash = (markMode || rolled) ? dragColor.ui.withAlphaComponent(0.7) : Koe.highlightFill.withAlphaComponent(0.5)
                     if let old = preview { restoreBackground(old, in: view) }
                     if next.length > 0, NSMaxRange(next) <= view.textStorage.length {
                         view.textStorage.addAttribute(.backgroundColor, value: wash, range: next)
@@ -572,8 +593,8 @@ struct HighlightTextView: UIViewRepresentable {
                     preview = next
                 case .ended:
                     guard let done = preview, done.length > 0 else { anchorOffset = nil; preview = nil; return }
-                    if markMode {
-                        restoreBackground(done, in: view); onMark?(done, markColor)
+                    if markMode || rolled {
+                        restoreBackground(done, in: view); onMark?(done, dragColor); haptics?.done(at: point)
                     } else {
                         pendingSelection = done; pendingView = view
                         editMenu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
