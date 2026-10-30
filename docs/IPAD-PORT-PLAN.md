@@ -116,6 +116,14 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 - Ink never touches the PDF bytes: `PKDrawing` data per page, saved beside
   `highlights.json` in the `.koebook` folder and synced via `pencilInk/…`.
 
+- **Sign-in is a magic link by email, and a tapped link opens Safari, not
+  Koe.** The iPad app therefore signs in natively: email → Core sends the
+  link → *paste* it into Koe → Koe GETs `/api/auth/magic-link/verify` itself
+  (redirect stopped) → cookie in the app's persistent jar. Every launch and
+  foreground hits `/api/auth/get-session`, which extends the session (Better
+  Auth defaults: 7-day session, refreshed after a day of use), so the iPad
+  stays signed in as long as Koe is opened within any 7-day window.
+
 ## 6. Phases
 
 **Phase 0 — Tooling (an hour, nothing to download but xtool).** Xcode 16.3
