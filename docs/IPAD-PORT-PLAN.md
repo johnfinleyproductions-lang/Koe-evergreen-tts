@@ -101,6 +101,41 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
   targets `KoeCore` (neutral), `KoeMac` (today's executable), `KoeiPad`.
   `scripts/build_app.sh` unchanged.
 
+## 4b. Phase 4 picks (Tyler, 2026-10-30): Save to Board · Pencil Pro extras · Offline books
+
+**A. Highlights that go somewhere.** The highlight menu (and the colour menu)
+gains **Save to Board ▸** with the Mac's board names. Saving appends a
+`BoardItem` (text = the selected passage, source = "Book · Chapter",
+kind = "read") to the local `readflow.boards` document, posts
+`.koeStateChanged`, and StateSync pushes it with `baseRevision`. Boards are
+now edited on both devices, so `KoeStateLocal.merge` learns a board merge:
+union of boards by id, and per board a union of items by id (remote order,
+local additions appended). The Mac gets the same merge through the shared
+protocol file and reloads BoardStore on pull. Deletions made on one device
+between the other's pull and push can reappear once; acceptable for v1.
+
+**B. Pencil Pro extras.** A custom `PencilDragRecognizer` (UIGestureRecognizer
+subclass tracking the single Pencil touch) replaces the pan recognizer so the
+drag sees `rollAngle` (iOS 17.5). Rolling the barrel ±30° per step while
+dragging cycles the colour of the selection wash; lifting after a roll
+applies that colour with no menu, lifting without a roll shows the menu as
+today. `UICanvasFeedbackGenerator` (iOS 17.5) ticks on every word-boundary
+snap (`alignmentOccurred`) and on a completed mark (`pathCompleted`). Pro only;
+the USB-C Pencil keeps the menu path.
+
+**C. Offline books.** "Keep on this iPad" per book (toggle in the book
+screen). Koe's cache moves from Caches/ to Application Support/Koe/cache
+(not purged by iPadOS; excluded from backup). Keeping a book prefetches the
+PDF, every narrated chapter's audio, and every chapter's detail JSON (text +
+word timings), with progress and cancel. The library list and book details
+are cached too; when a live fetch fails, screens fall back to the cached copy
+and show an *Offline copy* badge. Launch while offline uses the last known
+sign-in state instead of showing the login. Away from home: put the
+think box's Tailscale address in Server; the session cookie is per host, so
+that host needs one Google sign-in of its own.
+
+Order: A → B → C, each installed and tried on the iPad before the next.
+
 ## 5. iPad landmines (verified)
 
 - `NSLocalNetworkUsageDescription` in Info.plist or LAN calls to
