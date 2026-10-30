@@ -130,7 +130,11 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 resume (native route lacks `progress`) and per-word page spans. Phase 3 slice 1
 done: drag-to-select + colour menu, quick highlighter, Highlights list, reading
 pen (opt-in), hover ruler, squeeze/double-tap play-pause, PencilKit ink per
-page. Phase 2 (Boards/Library/Canvas via a Core sync endpoint) not started.
+page. Phase 2 BUILT 2026-10-30 (Core PR #241 = koe_state store; Mac pushes on
+save + pulls on activate; iPad pulls on launch/foreground and shows Boards,
+Library, Canvas read-only with a snippet reader; highlights/positions merge
+both ways). Waiting on: merge #241 → deploy → migration 0136; install the new
+Mac Koe (`scripts/build_app.sh --install`); install the iPad build.
 Install recipe: Tyler force-closes Koe + unlocks → `xtool dev build --sign
 --ipa && xtool install --usb xtool/KoeiPad.ipa` (live app id is the
 double-prefixed one; never `xtool dev`, never uninstall without a probe).
