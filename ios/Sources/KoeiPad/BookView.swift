@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BookView: View {
     @EnvironmentObject var client: CoreClient
+    @ObservedObject private var keeper = Keeper.shared
     let summary: BookSummary
     @State private var detail: BookDetailResponse?
     @State private var place: Place?
@@ -33,6 +34,29 @@ struct BookView: View {
                         }
                     }
                     .listRowBackground(Koe.paper)
+                    Section {
+                        Toggle(isOn: Binding(get: { keeper.isKept(detail.book.id) },
+                                             set: { on in on ? keeper.keep(detail, client: client) : keeper.unkeep(detail) })) {
+                            Label("Keep on this iPad", systemImage: "arrow.down.circle")
+                        }
+                        .tint(Koe.shu)
+                        if let p = keeper.progress[detail.book.id] {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ProgressView(value: Double(p.done), total: Double(max(1, p.total))).tint(Koe.shu)
+                                Text("Fetching… \(p.done) of \(p.total)").font(.footnote).foregroundStyle(Koe.faint)
+                            }
+                        } else if keeper.isKept(detail.book.id) {
+                            Text("\(keeper.readyChapters(detail)) of \(detail.chapters.count) chapters on the iPad · \(bytesLabel(keeper.sizeOnDisk(detail)))")
+                                .font(.footnote).foregroundStyle(Koe.faint)
+                        } else {
+                            Text("Pulls the pages, every chapter's text and timing, and every narrator recording now, for the car or a flight. Kokoro chapters still need the voice server unless you've played them.")
+                                .font(.footnote).foregroundStyle(Koe.faint)
+                        }
+                        if let error = keeper.errors[detail.book.id] {
+                            Text(error).font(.footnote).foregroundStyle(Koe.shu)
+                        }
+                    }
+                    .listRowBackground(Koe.paper)
                     Section("Chapters") {
                         ForEach(detail.chapters) { chapter in
                             NavigationLink {
@@ -53,6 +77,14 @@ struct BookView: View {
         .background(Koe.desk)
         .navigationTitle(summary.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if client.servedOffline {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Label("Offline copy", systemImage: "icloud.slash").font(.caption.weight(.medium)).labelStyle(.titleAndIcon)
+                        .padding(.horizontal, 8).padding(.vertical, 4).background(Koe.paper2, in: Capsule()).foregroundStyle(Koe.ink2)
+                }
+            }
+        }
         .task { await load() }
         .onAppear { place = PlaceStore.load(summary.id) }
     }

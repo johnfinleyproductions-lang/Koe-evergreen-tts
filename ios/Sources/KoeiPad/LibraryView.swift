@@ -36,6 +36,12 @@ struct LibraryView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Text("声").font(Koe.serif(24, .semibold)).foregroundStyle(Koe.shu)
                 }
+                if client.servedOffline {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Label("Offline", systemImage: "icloud.slash").font(.caption.weight(.medium))
+                            .padding(.horizontal, 8).padding(.vertical, 4).background(Koe.paper2, in: Capsule()).foregroundStyle(Koe.ink2)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }

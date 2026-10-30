@@ -10,9 +10,11 @@ final class CoreClient: ObservableObject {
     @Published var baseURLString: String {
         didSet { UserDefaults.standard.set(baseURLString, forKey: "koe.coreURL") }
     }
-    @Published var signedIn = false
+    @Published var signedIn = false { didSet { UserDefaults.standard.set(signedIn, forKey: "koe.signedIn") } }
     @Published var userEmail: String?
     @Published var lastError: String?
+    /// True after a screen was served from the offline copy because Evergreen didn't answer.
+    @Published var servedOffline = false
 
     private let session: URLSession
 
@@ -70,7 +72,9 @@ final class CoreClient: ObservableObject {
             signedIn = true
             return true
         } catch {
-            // Offline or server down: keep whatever state we had; the books call will say.
+            // Offline or server down: trust the last known state so cached books still open.
+            let remembered = UserDefaults.standard.bool(forKey: "koe.signedIn")
+            if remembered { signedIn = true; servedOffline = true }
             return signedIn
         }
     }
@@ -182,21 +186,46 @@ final class CoreClient: ObservableObject {
         return RawReply(status: http.statusCode, data: data)
     }
 
-    // MARK: Books
+    // MARK: Books (live, with an offline copy of every JSON answer)
+
+    /// Fetch live and keep a copy; when Evergreen doesn't answer, serve the copy.
+    private func getKeepingCopy<T: Decodable>(_ path: String, copy name: String, as type: T.Type) async throws -> T {
+        let file = Self.cacheRoot.appendingPathComponent(name)
+        var request = URLRequest(url: try endpoint(path))
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw KoeError.network("No response from Evergreen.") }
+            if http.statusCode == 401 { signedIn = false; throw KoeError.signIn }
+            guard http.statusCode == 200 else { throw KoeError.http(http.statusCode) }
+            guard data.count <= 32 * 1024 * 1024 else { throw KoeError.tooLarge }
+            let decoded = try JSONDecoder().decode(T.self, from: data)
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: file, options: .atomic)
+            servedOffline = false
+            return decoded
+        } catch let error as URLError {
+            guard let data = try? Data(contentsOf: file), let decoded = try? JSONDecoder().decode(T.self, from: data) else { throw error }
+            servedOffline = true
+            return decoded
+        }
+    }
 
     func listBooks() async throws -> [BookSummary] {
-        let library = try await get("/api/reader/books/native", as: LibraryResponse.self)
+        let library = try await getKeepingCopy("/api/reader/books/native", copy: "library.json", as: LibraryResponse.self)
         signedIn = true
         return library.books
     }
 
     func book(_ id: String) async throws -> BookDetailResponse {
-        try await get("/api/reader/books/\(id)/native", as: BookDetailResponse.self)
+        try await getKeepingCopy("/api/reader/books/\(id)/native", copy: "books/\(id)/detail.json", as: BookDetailResponse.self)
     }
 
     func chapter(bookId: String, chapterId: String) async throws -> BookDetailResponse {
-        try await get("/api/reader/books/\(bookId)/native?chapter=\(chapterId)", as: BookDetailResponse.self)
+        try await getKeepingCopy("/api/reader/books/\(bookId)/native?chapter=\(chapterId)", copy: "books/\(bookId)/chapters/\(chapterId).json", as: BookDetailResponse.self)
     }
+
+    func hasCopy(_ name: String) -> Bool { FileManager.default.fileExists(atPath: Self.cacheRoot.appendingPathComponent(name).path) }
 
     /// Core checks Origin against Host on book writes; a native app sends none,
     /// so we send our own server's origin.
@@ -220,9 +249,15 @@ final class CoreClient: ObservableObject {
 
     // MARK: Files (PDF, audio) cached under Caches/koe
 
+    /// Application Support, not Caches: kept books must survive iPadOS cache purges.
+    /// Excluded from backup; everything here is re-downloadable from Evergreen.
     static var cacheRoot: URL {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("koe", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        var base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Koe/cache", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: base.path) {
+            try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            try? base.setResourceValues(values)
+        }
         return base
     }
 
