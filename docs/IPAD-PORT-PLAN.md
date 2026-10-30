@@ -12,7 +12,7 @@ no camera scanning. Those stay on the Mac.
 ## 1. The device (verified)
 
 - **iPad Air 11-inch (M2), 2024**, Starlight, 128 GB, Wi-Fi — part number
-  MUWE3LL/A. Running **iPadOS 27** (upgrading 2026-10-29).
+  MUWE3LL/A. Running **iPadOS 27** (upgraded 2026-10-29).
 - **Pencil hover: yes** (iPad Air M2 is on Apple's hover list).
 - **Compatible pencils: Apple Pencil Pro or Apple Pencil (USB-C) only.** The
   2nd-generation Pencil does not pair with the M2 Air.
@@ -64,8 +64,10 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
   separate decision. Both need a restart, which ends the other Claude sessions.
 - Then: Xcode 27.1 from developer.apple.com or the App Store, `sudo
   xcode-select -s /Applications/Xcode.app`, sign in with the Apple ID
-  → Personal Team (free, 7-day installs, no iCloud/push) or $99/yr (1-year
-  profiles, TestFlight). Keep Xcode 16.3 for nothing; it can go.
+  → **Personal Team (free) — decided 2026-10-29.** Installs on Tyler's own
+  iPad, signature expires every 7 days (re-run from Xcode), no iCloud/push.
+  Revisit the $99/yr program (1-year signatures, TestFlight over the air)
+  after Phase 1, once the companion is daily-use. Xcode 16.3 can go.
 - **Project.** SwiftPM cannot build an iOS app bundle. Add `ios/project.yml`
   for **XcodeGen** with an iPad app target depending on the local package
   (`packages: KoeCore: path: ..`). Known open issue #1575 (Aug 2025, 2.44.1)
@@ -93,8 +95,10 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 ## 6. Phases
 
 **Phase 0 — Tooling (half a day, mostly downloads).** macOS 26.7.2 → Xcode
-27.1 → Apple ID → pair the iPad → XcodeGen project → empty KoeiPad on the
-device. Exit: Koe icon on the iPad.
+27.1 → Apple ID (Personal Team) → cable the iPad, trust the Mac, turn on
+Developer Mode (Settings → Privacy & Security → Developer Mode, restarts the
+iPad) → XcodeGen project → empty KoeiPad on the device. Exit: Koe icon on
+the iPad, and it still opens after unplugging.
 
 **Phase 1 — Books companion (no Core change needed).** Sign into Core from
 the iPad, pull the two pilot books, original PDF pages, Audiobook Narrator +
@@ -145,5 +149,5 @@ Split View beside Notes or Safari as a listen-along.
 - OK to update the Mac to **macOS 26.7.2** (restart; other sessions stop)?
   Or straight to 27.2?
 - Install **Xcode 27.1** and sign in with the Apple ID; the sign-in can't be
-  scripted. Then: free Personal Team or $99 program.
+  scripted. Signing = free Personal Team (decided).
 - The Core sync endpoint (§3) is a Core PR you merge; say when to open it.
