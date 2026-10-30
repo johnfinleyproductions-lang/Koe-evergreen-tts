@@ -83,10 +83,21 @@ struct ReaderView: View {
     }
 
     private func textPane(_ reading: Reading) -> some View {
-        HighlightTextView(text: reading.sourceText, tokens: reading.tokens, currentIndex: player.wordIndex) { index in
+        HighlightTextView(text: reading.sourceText, ranges: player.highlightRanges, currentIndex: player.highlightIndex) { index in
             player.seek(toWord: index)
         }
         .background(Koe.paper)
+        .overlay(alignment: .top) {
+            if player.preparing {
+                HStack(spacing: 8) { ProgressView().tint(Koe.shu); Text("Kokoro is preparing…").font(.footnote) }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Koe.paper2, in: Capsule()).padding(.top, 10)
+            } else if let error = player.error, player.ready {
+                Text(error).font(.footnote).foregroundStyle(Koe.shu).multilineTextAlignment(.center)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Koe.paper2, in: RoundedRectangle(cornerRadius: 10)).padding(10)
+            }
+        }
     }
 
     private func loadPDF() async {
@@ -112,15 +123,26 @@ struct TransportBar: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                Text(clock(scrubbing ? scrub : player.seconds)).font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.ink2).frame(width: 56, alignment: .trailing)
-                Slider(value: Binding(get: { scrubbing ? scrub : player.seconds }, set: { scrub = $0 }),
-                       in: 0...max(1, player.duration)) { editing in
-                    scrubbing = editing
-                    if !editing { player.seek(scrub) }
+                if player.voiceSource == .kokoro {
+                    Text("word \(Int(scrubbing ? scrub : Double(player.kokoroWord)) + 1)")
+                        .font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.ink2).frame(width: 96, alignment: .trailing)
+                    Slider(value: Binding(get: { scrubbing ? scrub : Double(player.kokoroWord) }, set: { scrub = $0 }),
+                           in: 0...Double(max(1, player.wordCount - 1))) { editing in
+                        scrubbing = editing
+                        if !editing { player.seek(toWord: Int(scrub.rounded())) }
+                    }
+                    .tint(Koe.shu).disabled(!player.ready)
+                    Text("of \(player.wordCount)").font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.ink2).frame(width: 96, alignment: .leading)
+                } else {
+                    Text(clock(scrubbing ? scrub : player.seconds)).font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.ink2).frame(width: 56, alignment: .trailing)
+                    Slider(value: Binding(get: { scrubbing ? scrub : player.seconds }, set: { scrub = $0 }),
+                           in: 0...max(1, player.duration)) { editing in
+                        scrubbing = editing
+                        if !editing { player.seek(scrub) }
+                    }
+                    .tint(Koe.shu).disabled(!player.ready)
+                    Text(clock(player.duration)).font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.ink2).frame(width: 56, alignment: .leading)
                 }
-                .tint(Koe.shu)
-                .disabled(!player.ready)
-                Text(clock(player.duration)).font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.ink2).frame(width: 56, alignment: .leading)
             }
             HStack(spacing: 18) {
                 Menu {
@@ -134,13 +156,35 @@ struct TransportBar: View {
                         .frame(width: 54, height: 34).background(Koe.paper2, in: Capsule())
                 }
                 .tint(Koe.ink)
+                Menu {
+                    Button {
+                        player.selectVoice(.recorded)
+                    } label: {
+                        if player.voiceSource == .recorded { Label("Audiobook Narrator", systemImage: "checkmark") } else { Text("Audiobook Narrator") }
+                    }
+                    .disabled(!player.hasRecording)
+                    Button {
+                        player.selectVoice(.kokoro)
+                    } label: {
+                        if player.voiceSource == .kokoro { Label("Kokoro · \(player.kokoroVoiceName)", systemImage: "checkmark") } else { Text("Kokoro · \(player.kokoroVoiceName)") }
+                    }
+                } label: {
+                    Label(player.voiceSource == .kokoro ? "Kokoro" : "Narrator", systemImage: "waveform")
+                        .font(.subheadline.weight(.medium)).padding(.horizontal, 12).frame(height: 34)
+                        .background(Koe.paper2, in: Capsule())
+                }
+                .tint(Koe.ink)
                 Spacer()
-                Button { player.skipBack() } label: { Image(systemName: "gobackward.15").font(.title2) }.disabled(!player.ready)
+                Button { player.skipBack() } label: {
+                    Image(systemName: player.voiceSource == .kokoro ? "arrow.uturn.backward" : "gobackward.15").font(.title2)
+                }.disabled(!player.ready)
                 Button { player.toggle() } label: {
                     Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 54))
                 }
                 .disabled(!player.ready)
-                Button { player.seek(player.seconds + 15) } label: { Image(systemName: "goforward.15").font(.title2) }.disabled(!player.ready)
+                Button { player.skipForward() } label: {
+                    Image(systemName: player.voiceSource == .kokoro ? "arrow.uturn.forward" : "goforward.15").font(.title2)
+                }.disabled(!player.ready)
                 Spacer()
                 if showPDF {
                     HStack(spacing: 6) {
@@ -222,7 +266,7 @@ struct PDFPageView: UIViewRepresentable {
 /// from there.
 struct HighlightTextView: UIViewRepresentable {
     let text: String
-    let tokens: [Token]
+    let ranges: [NSRange]
     let currentIndex: Int
     let onTapWord: (Int) -> Void
 
@@ -237,20 +281,20 @@ struct HighlightTextView: UIViewRepresentable {
         view.alwaysBounceVertical = true
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
         view.addGestureRecognizer(tap)
-        context.coordinator.tokens = tokens
+        context.coordinator.ranges = ranges
         context.coordinator.apply(text: text, to: view)
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
-        context.coordinator.tokens = tokens
+        if context.coordinator.ranges != ranges { context.coordinator.ranges = ranges; context.coordinator.resetHighlight(in: view) }
         if context.coordinator.text != text { context.coordinator.apply(text: text, to: view) }
         context.coordinator.highlight(index: currentIndex, in: view)
     }
 
     final class Coordinator: NSObject {
         let onTapWord: (Int) -> Void
-        var tokens: [Token] = []
+        var ranges: [NSRange] = []
         var text = ""
         private var lastRange: NSRange?
         private var lastIndex = -1
@@ -267,6 +311,13 @@ struct HighlightTextView: UIViewRepresentable {
             ])
         }
 
+        func resetHighlight(in view: UITextView) {
+            if let old = lastRange, NSMaxRange(old) <= view.textStorage.length {
+                view.textStorage.removeAttribute(.backgroundColor, range: old)
+            }
+            lastRange = nil; lastIndex = -1
+        }
+
         func highlight(index: Int, in view: UITextView) {
             guard index != lastIndex else { return }
             lastIndex = index
@@ -276,9 +327,8 @@ struct HighlightTextView: UIViewRepresentable {
                 storage.removeAttribute(.backgroundColor, range: old)
             }
             lastRange = nil
-            guard index >= 0, index < tokens.count else { return }
-            let t = tokens[index]
-            let range = NSRange(location: t.charStart, length: max(0, t.charEnd - t.charStart))
+            guard index >= 0, index < ranges.count else { return }
+            let range = ranges[index]
             guard range.location >= 0, NSMaxRange(range) <= length, range.length > 0 else { return }
             storage.addAttribute(.backgroundColor, value: Koe.highlightFill, range: range)
             lastRange = range
@@ -301,8 +351,8 @@ struct HighlightTextView: UIViewRepresentable {
             let point = gesture.location(in: view)
             guard let position = view.closestPosition(to: point) else { return }
             let offset = view.offset(from: view.beginningOfDocument, to: position)
-            if let hit = tokens.firstIndex(where: { $0.charStart <= offset && offset < $0.charEnd }) { onTapWord(hit); return }
-            if let next = tokens.firstIndex(where: { $0.charStart >= offset }) { onTapWord(next) }
+            if let hit = ranges.firstIndex(where: { $0.location <= offset && offset < NSMaxRange($0) }) { onTapWord(hit); return }
+            if let next = ranges.firstIndex(where: { $0.location >= offset }) { onTapWord(next) }
         }
     }
 }

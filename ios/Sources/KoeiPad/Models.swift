@@ -44,6 +44,7 @@ struct Chapter: Decodable, Identifiable, Hashable {
     var errorMessage: String?
     var durationSeconds: Double?
 
+    /// A narrator recording exists. Every chapter can still be read by Kokoro.
     var isReady: Bool { status == "completed" }
     var firstPage: Int { sourcePages.min() ?? 1 }
     var statusLabel: String {
@@ -86,6 +87,32 @@ struct Place: Codable {
     var rate: Float
     var followPages: Bool
     var updatedAt: Date
+    // Optional so places saved before the Kokoro option still decode.
+    var voiceSource: VoiceSource?
+    var kokoroWord: Int?
+}
+
+enum VoiceSource: String, Codable, CaseIterable {
+    case recorded, kokoro
+    var label: String { self == .recorded ? "Audiobook Narrator" : "Kokoro" }
+}
+
+/// Kokoro runs on the think box; same keys the Mac app uses, iPad namespace.
+enum KokoroSettings {
+    static var baseURL: URL {
+        get { URL(string: UserDefaults.standard.string(forKey: "koe.kokoroURL") ?? "") ?? URL(string: "http://192.168.4.200:8880")! }
+        set { UserDefaults.standard.set(newValue.absoluteString, forKey: "koe.kokoroURL") }
+    }
+    static var voice: String {
+        get { UserDefaults.standard.string(forKey: "koe.kokoroVoice") ?? "af_heart" }
+        set { UserDefaults.standard.set(newValue, forKey: "koe.kokoroVoice") }
+    }
+    /// "af_heart" → "Heart", like the Mac's KoeBookVoiceSource.kokoroVoiceName.
+    static func voiceName(_ identifier: String) -> String {
+        let parts = identifier.split(separator: "_", maxSplits: 1)
+        guard parts.count == 2, parts[0].count == 2 else { return identifier }
+        return parts[1].replacingOccurrences(of: "_", with: " ").capitalized
+    }
 }
 
 enum PlaceStore {

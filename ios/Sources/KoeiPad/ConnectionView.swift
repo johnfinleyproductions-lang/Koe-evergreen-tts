@@ -26,7 +26,7 @@ struct ConnectionView: View {
 
     private func probe() async {
         async let c = Reach.probe(client.baseURL.appendingPathComponent("reader").absoluteString)
-        async let k = Reach.probe("http://192.168.4.200:8880/health")
+        async let k = Reach.probe(KokoroSettings.baseURL.appendingPathComponent("health").absoluteString)
         (core, kokoro) = await (c, k)
     }
 }

@@ -22,11 +22,12 @@ struct BookView: View {
                             .font(.footnote).foregroundStyle(Koe.faint)
                         }
                         .padding(.vertical, 6)
-                        if let place, let chapter = detail.chapters.first(where: { $0.id == place.chapterId }), chapter.isReady {
+                        if let place, let chapter = detail.chapters.first(where: { $0.id == place.chapterId }) {
                             NavigationLink {
                                 ReaderView(book: detail.book, chapters: detail.chapters, chapter: chapter, place: place)
                             } label: {
-                                Label("Continue · \(chapter.title) · \(clock(place.seconds))", systemImage: "play.circle.fill")
+                                Label(place.voiceSource == .kokoro ? "Continue · \(chapter.title) · Kokoro, word \((place.kokoroWord ?? 0) + 1)"
+                                                                  : "Continue · \(chapter.title) · \(clock(place.seconds))", systemImage: "play.circle.fill")
                                     .font(Koe.serif(17, .semibold)).foregroundStyle(Koe.shu)
                             }
                         }
@@ -34,14 +35,10 @@ struct BookView: View {
                     .listRowBackground(Koe.paper)
                     Section("Chapters") {
                         ForEach(detail.chapters) { chapter in
-                            if chapter.isReady {
-                                NavigationLink {
-                                    ReaderView(book: detail.book, chapters: detail.chapters, chapter: chapter,
-                                               place: place?.chapterId == chapter.id ? place : nil)
-                                } label: { ChapterRow(chapter: chapter, current: place?.chapterId == chapter.id) }
-                            } else {
-                                ChapterRow(chapter: chapter, current: false).foregroundStyle(Koe.faint)
-                            }
+                            NavigationLink {
+                                ReaderView(book: detail.book, chapters: detail.chapters, chapter: chapter,
+                                           place: place?.chapterId == chapter.id ? place : nil)
+                            } label: { ChapterRow(chapter: chapter, current: place?.chapterId == chapter.id) }
                         }
                         .listRowBackground(Koe.paper)
                     }
@@ -73,12 +70,13 @@ struct ChapterRow: View {
         HStack(spacing: 12) {
             Text(String(chapter.position)).font(.system(.footnote, design: .monospaced)).foregroundStyle(Koe.faint).frame(width: 28, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
-                Text(chapter.title).font(Koe.serif(17, current ? .semibold : .regular)).foregroundStyle(chapter.isReady ? Koe.ink : Koe.faint)
+                Text(chapter.title).font(Koe.serif(17, current ? .semibold : .regular)).foregroundStyle(Koe.ink)
                 HStack(spacing: 8) {
                     if let first = chapter.sourcePages.min(), let last = chapter.sourcePages.max() {
                         Text(first == last ? "p. \(first)" : "pp. \(first)–\(last)")
                     }
-                    if let d = chapter.durationSeconds, d > 0 { Text(clock(d)) }
+                    if let d = chapter.durationSeconds, d > 0, chapter.isReady { Text(clock(d)) }
+                    if !chapter.isReady { Text("Kokoro reads it") }
                 }
                 .font(.footnote).foregroundStyle(Koe.faint)
             }

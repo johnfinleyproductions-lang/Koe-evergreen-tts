@@ -113,9 +113,27 @@ struct SignInView: View {
 }
 
 struct ServerSheet: View {
+    private struct VoiceList: Decodable { struct Voice: Decodable { var id: String }; var voices: [Voice] }
+    private func loadVoices() async {
+        var request = URLRequest(url: KokoroSettings.baseURL.appendingPathComponent("v1/audio/voices"))
+        request.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let list = try JSONDecoder().decode(VoiceList.self, from: data).voices.map(\.id).sorted()
+            voices = list
+            if !list.contains(kokoroVoice), let first = list.first(where: { $0 == "af_heart" }) ?? list.first { kokoroVoice = first }
+            voicesNote = "\(list.count) voices on the Kokoro server. The Mac uses af_heart."
+        } catch {
+            voicesNote = "Couldn't list voices (\(error.localizedDescription)). Type a voice id, e.g. af_heart."
+        }
+    }
     @EnvironmentObject var client: CoreClient
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    @State private var kokoroURL = ""
+    @State private var kokoroVoice = ""
+    @State private var voices: [String] = []
+    @State private var voicesNote = "Loading voices…"
 
     var body: some View {
         NavigationStack {
@@ -129,6 +147,18 @@ struct ServerSheet: View {
                 if let who = client.userEmail {
                     Section("Signed in as") { Text(who) }
                 }
+                Section("Kokoro voice") {
+                    TextField("http://192.168.4.200:8880", text: $kokoroURL)
+                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    if voices.isEmpty {
+                        TextField("af_heart", text: $kokoroVoice).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    } else {
+                        Picker("Voice", selection: $kokoroVoice) {
+                            ForEach(voices, id: \.self) { Text(KokoroSettings.voiceName($0) + "  ·  " + $0).tag($0) }
+                        }
+                    }
+                    Text(voicesNote).font(.footnote).foregroundStyle(.secondary)
+                }
                 Section {
                     Button("Sign out of Evergreen", role: .destructive) { Task { await client.signOut(); dismiss() } }
                 }
@@ -141,12 +171,17 @@ struct ServerSheet: View {
                         if let u = URL(string: trimmed), ["http", "https"].contains(u.scheme ?? ""), u.host != nil {
                             client.baseURLString = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                         }
+                        let k = kokoroURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                        if let u = URL(string: k), ["http", "https"].contains(u.scheme ?? ""), u.host != nil { KokoroSettings.baseURL = u }
+                        let v = kokoroVoice.trimmingCharacters(in: .whitespaces)
+                        if !v.isEmpty, v.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) { KokoroSettings.voice = v }
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
-            .onAppear { text = client.baseURLString }
+            .onAppear { text = client.baseURLString; kokoroURL = KokoroSettings.baseURL.absoluteString; kokoroVoice = KokoroSettings.voice }
+            .task { await loadVoices() }
         }
     }
 }
