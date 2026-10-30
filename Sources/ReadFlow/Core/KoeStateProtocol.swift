@@ -61,13 +61,38 @@ enum KoeStateLocal {
     }
 
     /// Dictionary documents: remote entries, overlaid by the local ones (this
-    /// device's edits win for the entries it touched). Everything else: remote.
+    /// device's edits win for the entries it touched). Boards: union by id,
+    /// items union by id (both devices append). Everything else: remote.
     static func merge(local: Any?, remote: Any, key: String) -> Any {
+        if key == KoeStateKeys.boards, let r = remote as? [[String: Any]] {
+            guard let l = local as? [[String: Any]] else { return r }
+            return mergeBoards(local: l, remote: r)
+        }
         guard KoeStateKeys.dictionaryKeys.contains(key),
               let r = remote as? [String: Any] else { return remote }
         guard let l = local as? [String: Any] else { return r }
         var out = r
         for (k, v) in l { out[k] = v }
+        return out
+    }
+
+    /// Remote boards in remote order, each with local-only items appended;
+    /// local-only boards appended at the end. Field names are the Mac's Board/BoardItem.
+    static func mergeBoards(local: [[String: Any]], remote: [[String: Any]]) -> [[String: Any]] {
+        func id(_ o: [String: Any]) -> String? { (o["id"] as? String)?.lowercased() }
+        var out: [[String: Any]] = []
+        for var board in remote {
+            guard let bid = id(board) else { out.append(board); continue }
+            if let mine = local.first(where: { id($0) == bid }) {
+                var items = board["items"] as? [[String: Any]] ?? []
+                let known = Set(items.compactMap(id))
+                for item in (mine["items"] as? [[String: Any]] ?? []) where !(id(item).map(known.contains) ?? true) { items.append(item) }
+                board["items"] = items
+            }
+            out.append(board)
+        }
+        let seen = Set(out.compactMap(id))
+        for board in local where !(id(board).map(seen.contains) ?? true) { out.append(board) }
         return out
     }
 

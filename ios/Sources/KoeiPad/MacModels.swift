@@ -47,12 +47,14 @@ final class MacDocuments: ObservableObject {
     @Published var links: [CanvasLink] = []
     @Published var notebooks: [Notebook] = []
     @Published var pulled: [LibrarySnippet] = []
-    private var observer: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
 
     init() {
         reload()
-        observer = NotificationCenter.default.addObserver(forName: .koeStateDidPull, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.reload() }
+        for name in [Notification.Name.koeStateDidPull, .koeStateChanged] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.reload() }
+            })
         }
     }
 
@@ -70,4 +72,23 @@ final class MacDocuments: ObservableObject {
     }
 
     static let canvasColors: [UInt32] = [0xFDF3C4, 0xDDE3EC, 0xF4DDD6, 0xE3ECD6, 0xEADDF0, 0xD6E8EC]
+}
+
+
+/// Appends a passage to one of the Mac's boards, locally; StateSync pushes it.
+enum BoardWriter {
+    @MainActor
+    static func save(text: String, source: String, to boardId: UUID) -> Bool {
+        let key = KoeStateKeys.boards
+        guard let data = UserDefaults.standard.data(forKey: key),
+              var boards = try? JSONDecoder().decode([Board].self, from: data),
+              let index = boards.firstIndex(where: { $0.id == boardId }) else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        boards[index].items.append(BoardItem(text: trimmed, source: source, kind: trimmed.count < 160 ? "clip" : "read"))
+        guard let encoded = try? JSONEncoder().encode(boards) else { return false }
+        UserDefaults.standard.set(encoded, forKey: key)
+        NotificationCenter.default.post(name: .koeStateChanged, object: key)
+        return true
+    }
 }

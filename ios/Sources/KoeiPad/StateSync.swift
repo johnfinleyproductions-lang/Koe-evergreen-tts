@@ -20,7 +20,7 @@ final class StateSync: ObservableObject {
     init(client: CoreClient) {
         self.client = client
         observer = NotificationCenter.default.addObserver(forName: .koeStateChanged, object: nil, queue: .main) { [weak self] note in
-            guard let key = note.object as? String, KoeStateKeys.dictionaryKeys.contains(key) else { return }
+            guard let key = note.object as? String, KoeStateKeys.dictionaryKeys.contains(key) || key == KoeStateKeys.boards else { return }
             Task { @MainActor in self?.schedulePush(key) }
         }
     }

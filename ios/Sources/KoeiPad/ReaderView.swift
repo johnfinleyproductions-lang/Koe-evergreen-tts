@@ -5,8 +5,10 @@ import UIKit
 
 struct ReaderView: View {
     @EnvironmentObject var client: CoreClient
+    @EnvironmentObject var docs: MacDocuments
     @Environment(\.horizontalSizeClass) private var sizeClass
     @StateObject private var player = ChapterPlayer()
+    @State private var savedToast: String?
     let book: BookInfo
     let chapters: [Chapter]
     let chapter: Chapter
@@ -46,7 +48,23 @@ struct ReaderView: View {
             _ = await (load, pdf)
         }
         .onDisappear { player.stop() }
-        .sheet(isPresented: $showMarks) { MarksSheet(player: player) }
+        .sheet(isPresented: $showMarks) { MarksSheet(player: player, boards: docs.boards.map { ($0.id, $0.name) }) { range, boardId in saveToBoard(range, boardId) } }
+        .overlay(alignment: .bottom) {
+            if let savedToast {
+                Text(savedToast).font(.footnote.weight(.medium)).padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Koe.ink.opacity(0.9), in: Capsule()).foregroundStyle(Koe.paper).padding(.bottom, 120)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    private func saveToBoard(_ range: NSRange, _ boardId: UUID) {
+        guard let text = player.reading?.sourceText, let r = Range(range, in: text) else { return }
+        let passage = String(text[r])
+        let ok = BoardWriter.save(text: passage, source: "\(book.title) · \(chapter.title)", to: boardId)
+        let name = docs.boards.first(where: { $0.id == boardId })?.name ?? "board"
+        withAnimation { savedToast = ok ? "Saved to \(name)" : "Couldn't save to \(name)" }
+        Task { try? await Task.sleep(for: .seconds(2)); withAnimation { savedToast = nil } }
     }
 
     @ViewBuilder private var content: some View {
@@ -97,8 +115,10 @@ struct ReaderView: View {
     private func textPane(_ reading: Reading) -> some View {
         HighlightTextView(text: reading.sourceText, ranges: player.highlightRanges, currentIndex: player.highlightIndex,
                           readingPen: readingPen, marks: player.marks, markMode: markMode, markColor: markColor,
+                          boards: docs.boards.map { ($0.id, $0.name) },
                           onMark: { range, color in player.mark(range, color: color); markColorRaw = color.rawValue },
                           onUnmark: { range in player.unmark(range) },
+                          onSaveToBoard: { range, boardId in saveToBoard(range, boardId) },
                           onTapWord: { index in
             player.seek(toWord: index)
         }, onPenWord: { index in
@@ -378,8 +398,10 @@ struct HighlightTextView: UIViewRepresentable {
     var marks: [KoeTextHighlight] = []
     var markMode = false
     var markColor: KoeHighlightColor = .yellow
+    var boards: [(UUID, String)] = []
     var onMark: ((NSRange, KoeHighlightColor) -> Void)? = nil
     var onUnmark: ((NSRange) -> Void)? = nil
+    var onSaveToBoard: ((NSRange, UUID) -> Void)? = nil
     let onTapWord: (Int) -> Void
     var onPenWord: ((Int) -> Void)? = nil
 
@@ -416,6 +438,7 @@ struct HighlightTextView: UIViewRepresentable {
         context.coordinator.readingPen = readingPen
         context.coordinator.ranges = ranges
         context.coordinator.configure(markMode: markMode, markColor: markColor, onMark: onMark, onUnmark: onUnmark)
+        context.coordinator.boards = boards; context.coordinator.onSaveToBoard = onSaveToBoard
         context.coordinator.apply(text: text, to: view)
         context.coordinator.setMarks(marks, in: view)
         return view
@@ -424,6 +447,7 @@ struct HighlightTextView: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.readingPen = readingPen
         context.coordinator.configure(markMode: markMode, markColor: markColor, onMark: onMark, onUnmark: onUnmark)
+        context.coordinator.boards = boards; context.coordinator.onSaveToBoard = onSaveToBoard
         if context.coordinator.ranges != ranges { context.coordinator.ranges = ranges; context.coordinator.resetHighlight(in: view) }
         if context.coordinator.text != text { context.coordinator.apply(text: text, to: view); context.coordinator.setMarks(marks, in: view, force: true) }
         else { context.coordinator.setMarks(marks, in: view) }
@@ -448,6 +472,8 @@ struct HighlightTextView: UIViewRepresentable {
         private var markColor: KoeHighlightColor = .yellow
         private var onMark: ((NSRange, KoeHighlightColor) -> Void)?
         private var onUnmark: ((NSRange) -> Void)?
+        var boards: [(UUID, String)] = []
+        var onSaveToBoard: ((NSRange, UUID) -> Void)?
         private var anchorOffset: Int?
         private var preview: NSRange?
         init(onTapWord: @escaping (Int) -> Void, onPenWord: ((Int) -> Void)?) { self.onTapWord = onTapWord; self.onPenWord = onPenWord }
@@ -630,6 +656,18 @@ struct HighlightTextView: UIViewRepresentable {
                     self.onMark?(sel, color)
                 }
             }
+            if boards.isEmpty {
+                children.append(UIAction(title: "Save to Board", image: UIImage(systemName: "rectangle.stack.badge.plus"), attributes: .disabled) { _ in })
+            } else {
+                children.append(UIMenu(title: "Save to Board", image: UIImage(systemName: "rectangle.stack.badge.plus"),
+                                       children: boards.map { board in
+                    UIAction(title: board.1) { [weak self] _ in
+                        guard let self else { return }
+                        self.restoreBackground(sel, in: view); self.pendingSelection = nil
+                        self.onSaveToBoard?(sel, board.0)
+                    }
+                }))
+            }
             children.append(UIAction(title: "Read from here", image: UIImage(systemName: "play.fill")) { [weak self] _ in
                 guard let self else { return }
                 self.restoreBackground(sel, in: view); self.pendingSelection = nil
@@ -686,6 +724,8 @@ struct PencilGestures: ViewModifier {
 
 struct MarksSheet: View {
     @ObservedObject var player: ChapterPlayer
+    var boards: [(UUID, String)] = []
+    var onSaveToBoard: ((NSRange, UUID) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -703,6 +743,13 @@ struct MarksSheet: View {
                                 HStack(alignment: .top, spacing: 12) {
                                     RoundedRectangle(cornerRadius: 3).fill(mark.color.swatch).frame(width: 6).padding(.vertical, 2)
                                     Text(player.excerpt(mark)).font(Koe.serif(16)).foregroundStyle(Koe.ink).multilineTextAlignment(.leading)
+                                }
+                            }
+                            .contextMenu {
+                                if boards.isEmpty { Text("No boards yet") } else {
+                                    ForEach(boards, id: \.0) { board in
+                                        Button { onSaveToBoard?(mark.range, board.0) } label: { Label("Save to \(board.1)", systemImage: "rectangle.stack.badge.plus") }
+                                    }
                                 }
                             }
                         }
