@@ -12,7 +12,10 @@ no camera scanning. Those stay on the Mac.
 ## 1. The device (verified)
 
 - **iPad Air 11-inch (M2), 2024**, Starlight, 128 GB, Wi-Fi — part number
-  MUWE3LL/A. Running **iPadOS 27** (upgraded 2026-10-29).
+  MUWE3LL/A. Running **iPadOS 26.5.2** (checked 2026-10-29). **Hold the iPadOS 27 update** until
+  the Mac has Xcode 27 — a device newer than the installed Xcode cannot be
+  debugged. Turn off automatic updates on the iPad (Settings → General →
+  Software Update → Automatic Updates) until then.
 - **Pencil hover: yes** (iPad Air M2 is on Apple's hover list).
 - **Compatible pencils: Apple Pencil Pro or Apple Pencil (USB-C) only.** The
   2nd-generation Pencil does not pair with the M2 Air.
@@ -56,14 +59,21 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 - Mac: Apple silicon, **macOS 26.2**, 96 GB free. `/Applications/Xcode.app` is
   **16.3** (iOS 18.4 SDK), `xcode-select` points at the CLT, 0 signing
   identities, no Apple ID in Xcode. Tyler's iPhone 16 is paired; the iPad is not.
-- **An iPadOS 27 iPad needs Xcode 27.x.** Xcode 27.1 (2026-10-15) ships the
-  iPadOS 27 SDK and **requires macOS Tahoe 26.6 or later**. Software Update
-  offers **macOS 26.7.2** (7.3 GB) and **macOS 27.2** (11.1 GB).
-  Recommendation: take **26.7.2** first (same major; lowest risk to the Koe
-  signing cert, Accessibility grants, Docker and the Studio worker). 27.2 is a
-  separate decision. Both need a restart, which ends the other Claude sessions.
-- Then: Xcode 27.1 from developer.apple.com or the App Store, `sudo
-  xcode-select -s /Applications/Xcode.app`, sign in with the Apple ID
+- **Toolchain rule: the installed Xcode must be at least as new as the iPad's
+  OS.** Two paths; **Path A chosen 2026-10-29**:
+  - **Path A (now): iPad stays on 26.5.2, Mac stays on macOS 26.2, install
+    Xcode 26.6.** Xcode 26.6 requires macOS Tahoe 26.2 or later (exactly what
+    the Mac runs), ships the iPadOS 26.5 SDK, and needs **no Mac restart**.
+    The App Store only offers 27.1, so download `Xcode_26.6.xip` from
+    developer.apple.com/download/all (sign in with the Apple ID, free account
+    is fine), expand it, drag to /Applications (replacing 16.3).
+  - **Path B (later): iPad → iPadOS 27 needs Xcode 27.1, which requires macOS
+    26.6+.** Software Update offers macOS 26.7.2 (7.3 GB) and 27.2 (11.1 GB);
+    take 26.7.2 first (same major, lowest risk to the Koe signing cert,
+    Accessibility grants, Docker and the Studio worker). Restart ends the
+    other Claude sessions. Do B as one deliberate maintenance window.
+- Then: `sudo xcode-select -s /Applications/Xcode.app`, open Xcode once, sign
+  in with the Apple ID
   → **Personal Team (free) — decided 2026-10-29.** Installs on Tyler's own
   iPad, signature expires every 7 days (re-run from Xcode), no iCloud/push.
   Revisit the $99/yr program (1-year signatures, TestFlight over the air)
@@ -94,8 +104,8 @@ above plus `pencilInk/{bookId}/{page}` later. Size cap 1 MB per key.
 
 ## 6. Phases
 
-**Phase 0 — Tooling (half a day, mostly downloads).** macOS 26.7.2 → Xcode
-27.1 → Apple ID (Personal Team) → cable the iPad, trust the Mac, turn on
+**Phase 0 — Tooling (half a day, mostly downloads).** Xcode 26.6 on the
+current macOS 26.2 (Path A) → Apple ID (Personal Team) → cable the iPad, trust the Mac, turn on
 Developer Mode (Settings → Privacy & Security → Developer Mode, restarts the
 iPad) → XcodeGen project → empty KoeiPad on the device. Exit: Koe icon on
 the iPad, and it still opens after unplugging.
@@ -146,8 +156,8 @@ Split View beside Notes or Safari as a listen-along.
 ## 8. NEEDS YOU
 
 - Which Pencil: **Pro** or **USB-C**? (Settings → Apple Pencil shows it.)
-- OK to update the Mac to **macOS 26.7.2** (restart; other sessions stop)?
-  Or straight to 27.2?
-- Install **Xcode 27.1** and sign in with the Apple ID; the sign-in can't be
-  scripted. Signing = free Personal Team (decided).
+- Download and install **Xcode 26.6** (Path A) and sign in with the Apple ID;
+  the download and sign-in can't be scripted. Signing = free Personal Team
+  (decided). Keep the iPad on 26.5.2 and switch off its automatic updates.
+- Later, as one maintenance window: macOS 26.7.2 → Xcode 27.1 → then iPadOS 27.
 - The Core sync endpoint (§3) is a Core PR you merge; say when to open it.
