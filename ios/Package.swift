@@ -14,6 +14,9 @@ let package = Package(
         .library(name: "KoeiPad", targets: ["KoeiPad"]),
     ],
     targets: [
-        .target(name: "KoeiPad"),
+        .target(
+            name: "KoeiPad",
+            swiftSettings: [.swiftLanguageMode(.v5)]   // strict-concurrency pass comes with the KoeCore split
+        ),
     ]
 )
