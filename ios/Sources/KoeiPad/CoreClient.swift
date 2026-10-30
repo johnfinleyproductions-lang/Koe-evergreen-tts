@@ -1,25 +1,28 @@
 import Foundation
 import WebKit
 
-/// Talks to Evergreen Core with Koe's own sign-in session (the WKWebView
-/// cookie jar), exactly like the Mac app's KoeBookConnection. Only the book
-/// and reading routes are allowed, only on the configured server.
+/// Talks to Evergreen Core as Tyler, with a session cookie Koe owns outright:
+/// the magic-link sign-in happens inside the app, the cookie lives in the
+/// app's persistent jar, and every launch refreshes it so it never lapses.
+/// Only the book, reading and auth routes are allowed, only on the configured server.
 @MainActor
 final class CoreClient: ObservableObject {
     @Published var baseURLString: String {
         didSet { UserDefaults.standard.set(baseURLString, forKey: "koe.coreURL") }
     }
     @Published var signedIn = false
+    @Published var userEmail: String?
     @Published var lastError: String?
 
     private let session: URLSession
 
     init() {
         baseURLString = UserDefaults.standard.string(forKey: "koe.coreURL") ?? "http://192.168.4.200:3000"
-        let config = URLSessionConfiguration.ephemeral
+        let config = URLSessionConfiguration.default      // HTTPCookieStorage.shared: persists across launches
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 600
         config.httpCookieAcceptPolicy = .always
+        config.httpShouldSetCookies = true
         session = URLSession(configuration: config)
     }
 
@@ -30,29 +33,11 @@ final class CoreClient: ObservableObject {
         return s
     }
 
-    // MARK: Session
-
-    /// Copy the sign-in cookies from the web view's jar into our URLSession.
-    func syncCookies() async {
-        let cookies = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
-        let host = baseURL.host ?? ""
-        let storage = session.configuration.httpCookieStorage
-        storage?.cookies?.forEach { storage?.deleteCookie($0) }
-        for cookie in cookies where cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == host {
-            storage?.setCookie(cookie)
-        }
-    }
-
-    func signOut() async {
-        let store = WKWebsiteDataStore.default()
-        let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
-        await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records)
-        session.configuration.httpCookieStorage?.cookies?.forEach { session.configuration.httpCookieStorage?.deleteCookie($0) }
-        signedIn = false
-    }
+    private static let allowedPrefixes = ["/api/reader/books", "/api/readings/", "/api/auth/get-session",
+                                          "/api/auth/sign-in/magic-link", "/api/auth/magic-link/verify"]
 
     private func endpoint(_ path: String) throws -> URL {
-        guard path.hasPrefix("/api/reader/books") || path.hasPrefix("/api/readings/"), !path.hasPrefix("//"),
+        guard Self.allowedPrefixes.contains(where: { path.hasPrefix($0) }), !path.hasPrefix("//"),
               let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
               url.host == baseURL.host, url.port == baseURL.port, url.scheme == baseURL.scheme else {
             throw KoeError.unsafeURL
@@ -60,8 +45,95 @@ final class CoreClient: ObservableObject {
         return url
     }
 
+    // MARK: Session
+
+    private struct SessionEnvelope: Decodable {
+        struct User: Decodable { var email: String? }
+        var user: User?
+    }
+
+    /// Better Auth extends a session that is being used; calling this on every
+    /// launch and foreground keeps Tyler signed in indefinitely.
+    @discardableResult
+    func refreshSession() async -> Bool {
+        do {
+            var request = URLRequest(url: try endpoint("/api/auth/get-session"))
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let envelope = try? JSONDecoder().decode(SessionEnvelope?.self, from: data), let user = envelope.user else {
+                signedIn = false; userEmail = nil
+                return false
+            }
+            userEmail = user.email
+            signedIn = true
+            return true
+        } catch {
+            // Offline or server down: keep whatever state we had; the books call will say.
+            return signedIn
+        }
+    }
+
+    func requestMagicLink(email: String) async throws {
+        var request = URLRequest(url: try endpoint("/api/auth/sign-in/magic-link"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "callbackURL": "/reader"])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw KoeError.network("No response from Evergreen.") }
+        guard http.statusCode == 200 else {
+            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+            throw KoeError.network(message ?? "Evergreen answered HTTP \(http.statusCode).")
+        }
+        UserDefaults.standard.set(email, forKey: "koe.email")
+    }
+
+    /// The link from the email, pasted rather than tapped, so the cookie lands
+    /// in Koe's jar instead of Safari's.
+    func completeMagicLink(_ link: String) async throws {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port,
+              url.path == "/api/auth/magic-link/verify",
+              let token = components.queryItems?.first(where: { $0.name == "token" })?.value, !token.isEmpty else {
+            throw KoeError.network("That isn't a sign-in link from your Evergreen server.")
+        }
+        var request = URLRequest(url: url)
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        // Stop at the redirect: the Set-Cookie rides on that response.
+        let (_, response) = try await session.data(for: request, delegate: NoRedirect())
+        guard let http = response as? HTTPURLResponse, (200...399).contains(http.statusCode) else {
+            throw KoeError.network("Evergreen refused the link. Links are single-use and expire; send a fresh one.")
+        }
+        guard await refreshSession() else {
+            throw KoeError.network("The link was accepted but no session came back. Send a fresh link and paste it again.")
+        }
+    }
+
+    private final class NoRedirect: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest) async -> URLRequest? { nil }
+    }
+
+    func signOut() async {
+        let jar = HTTPCookieStorage.shared
+        for cookie in jar.cookies ?? [] where cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == baseURL.host {
+            jar.deleteCookie(cookie)
+        }
+        let store = WKWebsiteDataStore.default()
+        let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
+        await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records)
+        signedIn = false
+        userEmail = nil
+    }
+
+    // MARK: Requests
+
     private func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
-        await syncCookies()
         var request = URLRequest(url: try endpoint(path))
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
@@ -92,7 +164,6 @@ final class CoreClient: ObservableObject {
     /// so we send our own server's origin.
     func saveProgress(bookId: String, chapterId: String, seconds: Double) async {
         do {
-            await syncCookies()
             var request = URLRequest(url: try endpoint("/api/reader/books/\(bookId)/progress"))
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -121,7 +192,6 @@ final class CoreClient: ObservableObject {
     func cachedFile(path: String, name: String, mimePrefix: String, maxBytes: Int) async throws -> URL {
         let target = Self.cacheRoot.appendingPathComponent(name)
         if FileManager.default.fileExists(atPath: target.path) { return target }
-        await syncCookies()
         var request = URLRequest(url: try endpoint(path))
         request.timeoutInterval = 300
         let (tmp, response) = try await session.download(for: request)

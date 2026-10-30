@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var client: CoreClient
+    @Environment(\.scenePhase) private var scenePhase
     @State private var checked = false
 
     var body: some View {
@@ -21,8 +22,11 @@ struct ContentView: View {
             }
         }
         .task {
-            _ = try? await client.listBooks()      // an existing session signs us in silently
+            await client.refreshSession()      // the stored session signs us in; the call also extends it
             checked = true
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, checked { Task { await client.refreshSession() } }
         }
     }
 }
