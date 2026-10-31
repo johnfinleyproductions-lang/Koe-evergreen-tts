@@ -55,11 +55,13 @@ final class KoeStateSync {
     }
 
     /// Pull every document another device has moved past our revision.
-    func pullAll(force: Bool = false) async {
-        guard force || Date().timeIntervalSince(lastPull) > 60, !busy else { return }
+    /// Returns true when the server answered the index (= this Mac is signed in).
+    @discardableResult
+    func pullAll(force: Bool = false) async -> Bool {
+        guard force || Date().timeIntervalSince(lastPull) > 60, !busy else { return false }
         busy = true; defer { busy = false }
         lastPull = Date()
-        guard let index = await getIndex() else { return }
+        guard let index = await getIndex() else { return false }
         for entry in index where KoeStateKeys.all.contains(entry.key) && entry.revision != KoeStateLocal.revision(forKey: entry.key) {
             guard let doc = await getDocument(entry.key) else { continue }
             let local = KoeStateLocal.value(forKey: entry.key)
@@ -77,7 +79,10 @@ final class KoeStateSync {
             log.notice("seed \(key, privacy: .public)")
             await push(key, base: .some(nil))
         }
+        return true
     }
+
+    func note(_ message: String) { log.notice("\(message, privacy: .public)") }
 
     private func push(_ key: String, base: Int?? = nil) async {
         guard let value = KoeStateLocal.value(forKey: key) else { return }

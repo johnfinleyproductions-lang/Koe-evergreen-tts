@@ -79,11 +79,16 @@ final class KoeBookConnection: NSObject, WKNavigationDelegate {
         guard let book = connectingBook, webView.url?.host == URL(string: book.coreURL)?.host,
               webView.url?.path.hasPrefix("/auth") == false else { return }
         Task { @MainActor [weak self] in
-            guard let self, (try? await self.metadata(book)) != nil else { return }
+            guard let self else { return }
+            // Two independent proofs of a live session: this book's Core route, or the
+            // Boards/Canvas/Library sync index. Either one closes the window; before this,
+            // a signed-in user whose book check failed sat in front of an open window forever.
+            let booksOK = (try? await self.metadata(book)) != nil
+            let syncOK = await KoeStateSync.shared.pullAll(force: true)
+            KoeStateSync.shared.note("connect: books \(booksOK ? "ok" : "no"), sync \(syncOK ? "ok" : "no")")
+            guard booksOK || syncOK else { return }
             self.loginWindow?.orderOut(nil); self.loginWindow = nil; self.webView = nil; self.connectingBook = nil
-            self.onConnected?()
-            // The same sign-in session carries Boards/Canvas/Library sync: seed and pull right away.
-            await KoeStateSync.shared.pullAll(force: true)
+            if booksOK { self.onConnected?() }
         }
     }
 }
