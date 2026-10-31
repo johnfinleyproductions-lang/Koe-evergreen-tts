@@ -170,15 +170,17 @@ final class CoreClient: ObservableObject {
 
     struct RawReply { let status: Int; let data: Data }
 
-    func rawJSON(_ method: String, _ path: String, body: Any? = nil) async throws -> RawReply {
+    func rawJSON(_ method: String, _ path: String, body: Any? = nil, timeout: TimeInterval? = nil) async throws -> RawReply {
         var request = URLRequest(url: try endpoint(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let timeout { request.timeoutInterval = timeout }
+        // Core checks Origin against Host on every mutating route (PUT, POST, DELETE).
+        if method != "GET" { request.setValue(origin, forHTTPHeaderField: "Origin") }
         if let body {
             guard JSONSerialization.isValidJSONObject(body) else { throw KoeError.network("Bad JSON body") }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(origin, forHTTPHeaderField: "Origin")
         }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw KoeError.network("No response from Evergreen.") }

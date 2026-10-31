@@ -1,9 +1,9 @@
 import Foundation
 
-/// iPad half of the Phase 2 sync: pulls the Mac's Boards, Canvas, Library,
-/// highlights and positions from Core's koe_state store on launch and
-/// foreground, and pushes the two documents the iPad edits (highlights,
-/// positions) after a change. Same protocol file as the Mac (Shared/).
+/// iPad half of the sync: pulls the Mac's Boards, Canvas, Library, highlights
+/// and positions from Core's koe_state store on launch and foreground, and
+/// pushes what the iPad edits (highlights, positions, Save to Board, canvas
+/// cards and Pencil sketches) after a change. Same protocol file as the Mac.
 @MainActor
 final class StateSync: ObservableObject {
     @Published var lastPulled: Date?
@@ -20,7 +20,7 @@ final class StateSync: ObservableObject {
     init(client: CoreClient) {
         self.client = client
         observer = NotificationCenter.default.addObserver(forName: .koeStateChanged, object: nil, queue: .main) { [weak self] note in
-            guard let key = note.object as? String, KoeStateKeys.dictionaryKeys.contains(key) || key == KoeStateKeys.boards else { return }
+            guard let key = note.object as? String, KoeStateKeys.isSynced(key) else { return }
             Task { @MainActor in self?.schedulePush(key) }
         }
     }
@@ -39,7 +39,7 @@ final class StateSync: ObservableObject {
             guard index.status == 200 else { lastError = "Sync index HTTP \(index.status)"; return }
             available = true
             let entries = try JSONDecoder().decode(IndexResponse.self, from: index.data).keys
-            for entry in entries where KoeStateKeys.all.contains(entry.key) && entry.revision != KoeStateLocal.revision(forKey: entry.key) {
+            for entry in entries where KoeStateKeys.isSynced(entry.key) && entry.revision != KoeStateLocal.revision(forKey: entry.key) {
                 let reply = try await client.rawJSON("GET", KoeStateKeys.apiPath + "/" + entry.key)
                 guard reply.status == 200, reply.data.count <= 2 * 1024 * 1024,
                       let doc = try? JSONDecoder().decode(Document.self, from: reply.data) else { continue }
@@ -50,10 +50,16 @@ final class StateSync: ObservableObject {
                 NotificationCenter.default.post(name: .koeStateDidPull, object: entry.key)
                 if !KoeStateLocal.isEqual(merged, doc.value.value) { await push(entry.key, useBase: false) }
             }
-            // Seed: documents this iPad holds that the server has never seen (highlights made
-            // before the store existed). The Mac does the same for its boards and canvas.
             let remoteKeys = Set(entries.map(\.key))
-            for key in KoeStateKeys.all where !remoteKeys.contains(key) && KoeStateLocal.value(forKey: key) != nil {
+            // Sketches deleted on the Mac: gone from the server, and no card points at them any more.
+            let referencedInk = Set(((KoeStateLocal.value(forKey: KoeStateKeys.canvasNotes) as? [[String: Any]]) ?? []).compactMap { $0["ink"] as? String })
+            for key in KoeStateLocal.localInkKeys() where !remoteKeys.contains(key) && !referencedInk.contains(key) {
+                KoeStateLocal.remove(forKey: key)
+                NotificationCenter.default.post(name: .koeStateDidPull, object: key)
+            }
+            // Seed: documents this iPad holds that the server has never seen (highlights made
+            // before the store existed, sketches drawn offline). The Mac does the same for its boards.
+            for key in KoeStateKeys.all + KoeStateLocal.localInkKeys() where !remoteKeys.contains(key) && KoeStateLocal.value(forKey: key) != nil {
                 await push(key, useBase: false)
             }
             lastPulled = Date()
@@ -75,6 +81,19 @@ final class StateSync: ObservableObject {
         for key in keys { await push(key, useBase: true) }
     }
 
+    /// Remove a document here and on the server; the Mac drops it on its next pull.
+    func delete(_ key: String) async {
+        pending.remove(key)
+        KoeStateLocal.remove(forKey: key)
+        guard client.signedIn, available else { return }
+        do {
+            let reply = try await client.rawJSON("DELETE", KoeStateKeys.apiPath + "/" + key)
+            if reply.status != 204 && reply.status != 404 { lastError = "Sync delete \(key): HTTP \(reply.status)" }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     private func push(_ key: String, useBase: Bool) async {
         guard client.signedIn, available, let value = KoeStateLocal.value(forKey: key) else { return }
         var body: [String: Any] = ["value": value, "device": "ipad"]
@@ -94,6 +113,8 @@ final class StateSync: ObservableObject {
                 if again.status == 200, let saved = try? JSONDecoder().decode(IndexEntry.self, from: again.data) { KoeStateLocal.setRevision(saved.revision, forKey: key) }
             case 404:
                 available = false
+            case 413:
+                lastError = "Sync \(key): too large for the server (1 MB limit)"
             default:
                 lastError = "Sync \(key): HTTP \(reply.status)"
             }

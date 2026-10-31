@@ -73,6 +73,7 @@ private struct KoeBookReadingView: View {
     @ObservedObject private var settings = Settings.shared
     @StateObject private var highlights: KoeBookHighlights
     @State private var pageEntry = ""
+    @State private var showAsk = false
     init(book: KoeBook, store: KoeBookStore, player: KoeBookPlayer) {
         self.book = book; self.store = store; self.player = player
         _highlights = StateObject(wrappedValue: KoeBookHighlights(folder: store.directory(book), sourceHash: book.sourceSha256, pageCount: book.pageCount))
@@ -106,6 +107,8 @@ private struct KoeBookReadingView: View {
                     HStack {
                         Text(player.chapter?.title ?? "Chapter").font(.headline).lineLimit(1)
                         Spacer()
+                        Button { if player.isPlaying { player.toggle() }; showAsk = true } label: { Label("Ask the book…", systemImage: "questionmark.bubble") }
+                            .help("Ask a question about this chapter or the whole book; Evergreen answers from the book's text.")
                         Picker("Voice", selection: Binding(get: { player.voiceSource }, set: { player.selectVoice($0) })) {
                             Text("Audiobook Narrator").tag(KoeBookVoiceSource.recorded)
                             Text("Kokoro · \(KoeBookVoiceSource.kokoroVoiceName(settings.kokoroVoice))").tag(KoeBookVoiceSource.kokoro)
@@ -131,6 +134,7 @@ private struct KoeBookReadingView: View {
             }.frame(minWidth: 400)
         }
         .onAppear { pageEntry = String(player.page) }
+        .sheet(isPresented: $showAsk) { KoeAskBookView(book: book, chapter: player.chapter, connection: store.connection) }
         .onChange(of: player.page) { pageEntry = String($0) }
         .onChange(of: player.rate) { _ in player.save() }
     }

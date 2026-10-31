@@ -19,6 +19,7 @@ struct ReaderView: View {
     @State private var inking = false
     @State private var markMode = false
     @State private var showMarks = false
+    @State private var showAsk = false
     @AppStorage("koe.readingPen2") private var readingPen = false
     @AppStorage("koe.markColor") private var markColorRaw = KoeHighlightColor.yellow.rawValue
     private var markColor: KoeHighlightColor { KoeHighlightColor(rawValue: markColorRaw) ?? .yellow }
@@ -35,6 +36,10 @@ struct ReaderView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showAsk = true } label: { Label("Ask the book", systemImage: "questionmark.bubble") }
+                    .tint(Koe.shu)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Toggle(isOn: $readingPen) { Label("Reading pen (drag speaks words)", systemImage: "pencil.and.outline") }
                     Toggle(isOn: Binding(get: { showPDF }, set: { v in withAnimation { showPDF = v } })) { Label("Show pages", systemImage: "doc.text.image") }
@@ -49,6 +54,10 @@ struct ReaderView: View {
         }
         .onDisappear { player.stop() }
         .sheet(isPresented: $showMarks) { MarksSheet(player: player, boards: docs.boards.map { ($0.id, $0.name) }) { range, boardId in saveToBoard(range, boardId) } }
+        .sheet(isPresented: $showAsk) {
+            AskBookView(book: book, chapter: chapter).environmentObject(client).environmentObject(docs)
+                .onAppear { if player.isPlaying { player.toggle() } }
+        }
         .overlay(alignment: .bottom) {
             if let savedToast {
                 Text(savedToast).font(.footnote.weight(.medium)).padding(.horizontal, 14).padding(.vertical, 8)

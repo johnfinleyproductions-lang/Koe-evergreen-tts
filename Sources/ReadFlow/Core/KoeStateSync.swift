@@ -35,7 +35,7 @@ final class KoeStateSync {
     func start() {
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(forName: .koeStateChanged, object: nil, queue: .main) { [weak self] note in
-            guard let key = note.object as? String, KoeStateKeys.all.contains(key) else { return }
+            guard let key = note.object as? String, KoeStateKeys.isSynced(key) else { return }
             Task { @MainActor in self?.schedulePush(key) }
         }
         Task { await pullAll() }
@@ -62,7 +62,7 @@ final class KoeStateSync {
         busy = true; defer { busy = false }
         lastPull = Date()
         guard let index = await getIndex() else { return false }
-        for entry in index where KoeStateKeys.all.contains(entry.key) && entry.revision != KoeStateLocal.revision(forKey: entry.key) {
+        for entry in index where KoeStateKeys.isSynced(entry.key) && entry.revision != KoeStateLocal.revision(forKey: entry.key) {
             guard let doc = await getDocument(entry.key) else { continue }
             let local = KoeStateLocal.value(forKey: entry.key)
             let merged = KoeStateLocal.merge(local: local, remote: doc.value, key: entry.key)
@@ -75,11 +75,28 @@ final class KoeStateSync {
         // Seed: documents this Mac holds that the server has never seen (first sync, or a
         // key added since). Without this, boards made before the store existed never leave.
         let remoteKeys = Set(index.map(\.key))
-        for key in KoeStateKeys.all where !remoteKeys.contains(key) && KoeStateLocal.value(forKey: key) != nil {
+        // Sketches deleted on the other device: gone from the server, and no card points at them any more.
+        let referencedInk = Set(((KoeStateLocal.value(forKey: KoeStateKeys.canvasNotes) as? [[String: Any]]) ?? []).compactMap { $0["ink"] as? String })
+        for key in KoeStateLocal.localInkKeys() where !remoteKeys.contains(key) && !referencedInk.contains(key) {
+            KoeStateLocal.remove(forKey: key); reload(key)
+        }
+        for key in KoeStateKeys.all + KoeStateLocal.localInkKeys() where !remoteKeys.contains(key) && KoeStateLocal.value(forKey: key) != nil {
             log.notice("seed \(key, privacy: .public)")
             await push(key, base: .some(nil))
         }
         return true
+    }
+
+    /// Remove a document here and on the server; other devices drop it on their next pull.
+    func delete(_ key: String) async {
+        KoeStateLocal.remove(forKey: key)
+        guard let url = endpoint(key) else { return }
+        await useOwnSignInSession()
+        var request = URLRequest(url: url); request.httpMethod = "DELETE"
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        if let (_, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse {
+            log.notice("delete \(key, privacy: .public): HTTP \(http.statusCode, privacy: .public)")
+        }
     }
 
     func note(_ message: String) { log.notice("\(message, privacy: .public)") }
@@ -108,6 +125,7 @@ final class KoeStateSync {
         case KoeStateKeys.boards: BoardStore.shared.load()
         case KoeStateKeys.canvasNotes, KoeStateKeys.canvasLinks: CanvasStore.shared.load()
         case KoeStateKeys.notebooks, KoeStateKeys.libraryPulled: LibraryStore.shared.load()
+        case let k where KoeStateKeys.isInk(k): CanvasStore.shared.inkDidChange()
         default: break
         }
         NotificationCenter.default.post(name: .koeStateDidPull, object: key)

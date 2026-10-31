@@ -15,6 +15,7 @@
 
 import SwiftUI
 import Foundation
+import PencilKit
 
 // MARK: - Model
 
@@ -26,6 +27,8 @@ struct CanvasNote: Identifiable, Codable, Equatable {
     var y: Double
     var colorIndex: Int
     var tilt: Double
+    /// Set for a Pencil sketch drawn on the iPad: the sync key of its ink document. `text` is then a caption.
+    var ink: String? = nil
 }
 
 struct CanvasLink: Identifiable, Codable, Equatable {
@@ -42,6 +45,9 @@ final class CanvasStore: ObservableObject {
 
     @Published var notes: [CanvasNote] = []
     @Published var links: [CanvasLink] = []
+    /// Bumped when an ink document arrives or changes, so sketch cards reload their image.
+    @Published var inkVersion = 0
+    func inkDidChange() { inkVersion += 1 }
 
     private let notesKey = "readflow.canvasNotes"
     private let linksKey = "readflow.canvasLinks"
@@ -77,6 +83,7 @@ final class CanvasStore: ObservableObject {
     }
 
     func remove(_ id: UUID) {
+        if let key = notes.first(where: { $0.id == id })?.ink { Task { await KoeStateSync.shared.delete(key) } }
         notes.removeAll { $0.id == id }
         links.removeAll { $0.from == id || $0.to == id }   // drop dangling links
         save()
@@ -180,6 +187,19 @@ private struct StickyNoteView: View {
     @State private var hovering = false
     @State private var expanded = false
     @FocusState private var focused: Bool
+    @State private var inkImage: NSImage?
+    @ObservedObject private var canvasStore = CanvasStore.shared
+
+    /// Preview JPEG from the ink document; falls back to rendering the PencilKit strokes.
+    private func loadInk() {
+        guard let key = note.ink else { inkImage = nil; return }
+        let doc = KoeStateLocal.value(forKey: key)
+        if let data = KoeCanvasInk.preview(in: doc), let image = NSImage(data: data) { inkImage = image; return }
+        if let data = KoeCanvasInk.drawing(in: doc), let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty {
+            inkImage = drawing.image(from: drawing.bounds.insetBy(dx: -12, dy: -12), scale: 2); return
+        }
+        inkImage = nil
+    }
 
     private var color: CanvasColors.Sticky { CanvasColors.sticky[note.colorIndex % CanvasColors.sticky.count] }
     private var isLong: Bool { note.text.count > 120 }
@@ -191,15 +211,27 @@ private struct StickyNoteView: View {
                 .frame(width: 52, height: 15).rotationEffect(.degrees(-4))
                 .frame(maxWidth: .infinity)
 
+            if note.ink != nil {
+                // A Pencil sketch from the iPad. The preview travels with the sync document.
+                if let image = inkImage {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.white.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                } else {
+                    Text("Sketch arriving…").font(KoeFont.gothic(11)).foregroundStyle(color.ink.opacity(0.55))
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                }
+            }
             if editing {
                 TextEditor(text: $note.text)
                     .font(KoeFont.hand(15.5)).foregroundStyle(color.ink)
                     .scrollContentBackground(.hidden)
                     .frame(height: 80).focused($focused)
                     .onChange(of: focused) { f in if !f { editing = false; onChange() } }
-            } else {
+            } else if note.ink == nil || !note.text.isEmpty {
                 Text(note.text.isEmpty ? "New idea…" : note.text)
-                    .font(KoeFont.hand(15.5))
+                    .font(KoeFont.hand(note.ink == nil ? 15.5 : 12.5))
                     .foregroundStyle(note.text.isEmpty ? color.ink.opacity(0.5) : color.ink)
                     .lineLimit(expanded ? nil : 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,6 +262,9 @@ private struct StickyNoteView: View {
         .background(color.bg)
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .shadow(color: Color(hex: 0x46371E, alpha: 0.40), radius: 10, y: 7)
+        .onAppear(perform: loadInk)
+        .onChange(of: canvasStore.inkVersion) { _ in loadInk() }
+        .onChange(of: note.ink) { _ in loadInk() }
         .overlay(alignment: .topTrailing) {
             if hovering && !editing {
                 HStack(spacing: 4) {

@@ -138,6 +138,35 @@ Order: A → B → C. **All three built 2026-10-30** (commits aa25db2 Save to Bo
 + board merge, 0b95aba Pencil Pro roll/haptics, fed7d16+8ea7b70 offline); one
 iPad install carries them. Mac rebuild needed for the board merge (shared file).
 
+## 4c. Phase 5 (Tyler, 2026-10-30): Ask the book · Draw on the canvas
+
+**Ask the book (Core + both apps).** Core's two retrieval stacks could not serve books at $0
+(pgvector RAG embeds with OpenAI; the Knowledge Service is an unscoped shared corpus), so Core
+gets a small dedicated route: `POST /api/reader/books/{id}/ask` `{question, chapterId?, device}`
+→ chapter text straight from `readings.source_text`, lexical passage ranking (+ the local
+reranker when `RERANKER_URL` is set), answer from the house llama.cpp model (`READER_ASK_MODEL`,
+default order hemmingway-1 → gemma-4) with the release-assets call pattern. Reply
+`{schema:"koe-ask/1", answer, model, scope, passages[{chapterId, chapterTitle, position, excerpt}], elapsedMs}`;
+503 when no local model is configured, 504 on model timeout. The answer is written for a voice:
+2–5 plain sentences, no lists.
+- iPad: `AskBookView` (question field takes Scribble, chapter/whole-book scope, answer read by
+  `TextSpeaker` with word highlight, auto-read toggle, Save to Board, "Where this came from").
+  Entry: the reader's toolbar bubble, and the book page for whole-book questions.
+- Mac: `KoeAskBookView` sheet from "Ask the book…" in the chapter header; reads through the main
+  reading voice (`.readFlowReadExternalText`), Save to Board via `BoardStore`.
+- Both send `Origin` on POST (Core checks Origin vs Host on mutating routes); 90 s client timeout.
+
+**Draw on the canvas (iPad → Mac).** Each sketch is its own sync document `canvasInk.<note id>`
+(`KoeCanvasInk`: PKDrawing data + opaque JPEG preview, kept under 950 KB), referenced by a
+`CanvasNote.ink` field. `canvasNotes` stays small; cards union-merge by id on conflict.
+- iPad `CanvasView` is editable: New sketch (PKCanvasView + tool picker, finger or Pencil), tap a
+  sketch to keep drawing, drag any card to move it, context menu recolour/delete. `CanvasWriter`
+  saves the card before the ink document so a pull in between never garbage-collects it.
+- Mac `StickyNoteView` renders the preview (PencilKit fallback renders strokes); `text` is a caption.
+- Both syncs: `KoeStateKeys.isSynced` (fixed keys + ink prefix), seed local ink docs, GC ink files
+  that are gone from the server and unreferenced, `delete(key)` → Core DELETE.
+- Ink documents live as files (Application Support/Koe/canvas-ink), never in UserDefaults.
+
 ## 5. iPad landmines (verified)
 
 - `NSLocalNetworkUsageDescription` in Info.plist or LAN calls to

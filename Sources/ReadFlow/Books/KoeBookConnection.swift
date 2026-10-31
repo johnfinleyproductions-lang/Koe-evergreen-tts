@@ -11,7 +11,7 @@ struct KoeRemoteBookDetail: Decodable {
 
 @MainActor
 final class KoeBookConnection: NSObject, WKNavigationDelegate {
-    private let session = URLSession(configuration: .ephemeral)
+    let session = URLSession(configuration: .ephemeral)
     private var loginWindow: NSWindow?
     private var webView: WKWebView?
     private var connectingBook: KoeBook?
@@ -24,14 +24,14 @@ final class KoeBookConnection: NSObject, WKNavigationDelegate {
               url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == trusted.trimmingCharacters(in: CharacterSet(charactersIn: "/")) else { throw KoeBookError.unsafeURL }
         return url
     }
-    private func endpoint(_ path: String, book: KoeBook) throws -> URL {
+    func endpoint(_ path: String, book: KoeBook) throws -> URL {
         let server = try base(book)
         guard path.hasPrefix("/api/reader/books/") || path.hasPrefix("/api/readings/"),
               !path.hasPrefix("//"), let url = URL(string: path, relativeTo: server)?.absoluteURL,
               url.host == server.host, url.port == server.port, url.scheme == server.scheme else { throw KoeBookError.unsafeURL }
         return url
     }
-    private func useOwnSignInSession(for book: KoeBook) async throws {
+    func useOwnSignInSession(for book: KoeBook) async throws {
         let server = try base(book)
         // Only this application's WebKit sign-in session is used. Never inspect
         // or import Safari/Chrome/browser-extension credentials.

@@ -24,6 +24,8 @@ struct CanvasNote: Identifiable, Codable, Equatable, Hashable {
     var y: Double
     var colorIndex: Int
     var tilt: Double
+    /// A Pencil sketch: the sync key of its ink document (`canvasInk.<id>`). `text` is then a caption.
+    var ink: String? = nil
 }
 struct CanvasLink: Identifiable, Codable, Equatable, Hashable {
     var id: UUID = UUID()

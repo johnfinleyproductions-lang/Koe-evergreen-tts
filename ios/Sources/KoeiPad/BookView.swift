@@ -7,6 +7,7 @@ struct BookView: View {
     @State private var detail: BookDetailResponse?
     @State private var place: Place?
     @State private var error: String?
+    @State private var showAsk = false
 
     var body: some View {
         Group {
@@ -84,6 +85,14 @@ struct BookView: View {
                         .padding(.horizontal, 8).padding(.vertical, 4).background(Koe.paper2, in: Capsule()).foregroundStyle(Koe.ink2)
                 }
             }
+            if detail != nil && !client.servedOffline {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showAsk = true } label: { Label("Ask the book", systemImage: "questionmark.bubble") }.tint(Koe.shu)
+                }
+            }
+        }
+        .sheet(isPresented: $showAsk) {
+            if let detail { AskBookView(book: detail.book, chapter: nil) }
         }
         .task { await load() }
         .onAppear { place = PlaceStore.load(summary.id) }
