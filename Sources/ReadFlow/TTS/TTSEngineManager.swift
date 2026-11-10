@@ -82,6 +82,19 @@ final class TTSEngineManager {
     /// utterance are ignored (e.g. a slow Kokoro fetch returning after `stop()`).
     private var utteranceToken: Int = 0
 
+    /// Click-to-read-from-here: when the user taps a word, the engine is handed a
+    /// SUBSTRING starting at that word, so its 0-based `onWord` indices are shifted
+    /// by this offset back into the full shared tokenization. 0 for a normal read.
+    private var wordIndexOffset: Int = 0
+
+    /// Furthest word index highlighted in the current session — powers
+    /// resume-on-pause and the persisted per-document resume position.
+    private var furthestIndex: Int = 0
+
+    /// Only DOCUMENTS (this many words or more) resume / persist a position;
+    /// short selections always read from the top.
+    static let resumeMinWords = 120
+
     /// The engine kind last seen by `settingsChanged`. Used to detect an ACTUAL
     /// engine switch (vs a rate/voice change) so we only tear down playback when
     /// the user picked a different engine.
@@ -109,6 +122,8 @@ final class TTSEngineManager {
         // stop halts and clears. Both reuse the existing read/stop paths.
         hud.onRestart = { [weak self] in self?.restart() }
         hud.onStop = { [weak self] in self?.stop() }
+        // Tap a word to read from there.
+        hud.onSeekToWord = { [weak self] index in self?.readFromWord(index) }
 
         // React to settings changes (engine/voice/rate) so a switch while idle
         // takes effect on the next read, and so we can prewarm the new engine.
@@ -224,7 +239,7 @@ final class TTSEngineManager {
 
     /// Tokenize `text` ONCE, hand the words to the HUD, and start the selected
     /// engine. Empty text surfaces `TTSError.emptyText` and stops.
-    func read(_ text: String) {
+    func read(_ text: String, startingAt startIndex: Int = 0) {
         // 1. Tokenize the EXACT string we will hand to the engine (SPEC §4).
         let words = WordTokenizer.tokenize(text)
         guard !words.isEmpty else {
@@ -242,22 +257,51 @@ final class TTSEngineManager {
         currentWords = words
         currentText = text
 
+        // Optional resume: the engine gets a SUBSTRING from `start`, and the
+        // offset maps its 0-based callbacks back into the full tokenization.
+        let start = max(0, min(startIndex, words.count - 1))
+        wordIndexOffset = start
+        furthestIndex = start
+        let speakText = start == 0 ? text : String(text[words[start].range.lowerBound...])
+
         let selectedKind = settings.engineKind
 
         // 2. Azure with no Keychain key: fail loudly BEFORE attempting playback,
         //    then fall back to System (SPEC §3.7).
         if selectedKind == .azure, (settings.loadAzureKey()?.isEmpty ?? true) {
             presentError(.missingCredential(.azure), from: .azure)
-            fallBackToSystem(text: text, token: token)
+            fallBackToSystem(text: speakText, token: token)
             return
         }
 
         // 3. Hand the shared tokenization to the HUD and show it.
         hud.present(words: words, sourceText: text)
+        if start > 0 { hud.highlight(index: start) }   // land at the resume point
         state = .preparing
 
         // 4. Start the engine, relaying every callback (guarded by `token`).
-        startEngine(for: selectedKind, text: text, token: token)
+        startEngine(for: selectedKind, text: speakText, token: token)
+    }
+
+    /// Read a DOCUMENT (a whole PDF or web article). Resumes from the saved
+    /// position if you were part-way through this exact content before; short
+    /// snippets fall through to a normal top-of-text read.
+    func readDocument(_ text: String) {
+        let words = WordTokenizer.tokenize(text)
+        guard words.count >= Self.resumeMinWords else { read(text); return }
+        if let saved = ReadingPositionStore.position(for: text),
+           saved > 2, saved < words.count - 1 {
+            KoeLog.d("resume: \(words.count)-word doc from word \(saved)")
+            read(text, startingAt: saved)
+        } else {
+            read(text)
+        }
+    }
+
+    /// Persist the furthest word reached for the current document (long texts only).
+    private func saveProgress() {
+        guard !currentText.isEmpty, currentWords.count >= Self.resumeMinWords else { return }
+        ReadingPositionStore.save(furthestIndex, for: currentText)
     }
 
     /// Begin speaking on the engine for `kind`, wiring all four callbacks back to
@@ -274,9 +318,15 @@ final class TTSEngineManager {
             rate: rate,
             onWord: { [weak self] index in
                 guard let self, self.isCurrent(token) else { return }
-                // Index is in the shared tokenization space; clamp defensively.
-                guard index >= 0, index < self.currentWords.count else { return }
-                self.hud.highlight(index: index)
+                // Engine index is 0-based for the text it was given; add the seek
+                // offset to map back into the full shared tokenization, then clamp.
+                let full = self.wordIndexOffset + index
+                guard full >= 0, full < self.currentWords.count else { return }
+                if full > self.furthestIndex {
+                    self.furthestIndex = full
+                    if full % 25 == 0 { self.saveProgress() }   // persist resume point, throttled
+                }
+                self.hud.highlight(index: full)
             },
             onStateChange: { [weak self] newState in
                 guard let self, self.isCurrent(token) else { return }
@@ -404,13 +454,13 @@ final class TTSEngineManager {
             state = .paused
 
         case .paused:
-            // Resume -> re-read the retained text from the top.
+            // Resume -> pick up from the word we paused on, not the top.
             let text = currentText
             guard !text.isEmpty else { state = .idle; return }
-            read(text)
+            read(text, startingAt: furthestIndex)
 
         case .idle, .finished:
-            // Nothing loaded, or finished — re-read if we still have text.
+            // Nothing loaded, or finished — re-read from the top if we still have text.
             let text = currentText
             guard !text.isEmpty else { return }
             read(text)
@@ -425,15 +475,58 @@ final class TTSEngineManager {
         read(text)
     }
 
+    /// Click-to-read-from-here: re-read the loaded text starting at `wordIndex`,
+    /// keeping the FULL word list on screen so the highlight simply resumes there.
+    /// The engine is handed a substring starting at that word; `wordIndexOffset`
+    /// maps its 0-based callbacks back into the full tokenization.
+    func readFromWord(_ wordIndex: Int) {
+        let fullText = currentText
+        guard !fullText.isEmpty else { return }
+        // After a natural finish `currentWords` is cleared but `currentText` is
+        // kept — re-tokenize so tapping to re-read still works once it's done.
+        let fullWords = currentWords.isEmpty ? WordTokenizer.tokenize(fullText) : currentWords
+        guard wordIndex >= 0, wordIndex < fullWords.count else { return }
+
+        let subText = String(fullText[fullWords[wordIndex].range.lowerBound...])
+        guard !subText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        // Supersede any in-flight utterance WITHOUT tearing down the presentation
+        // (unlike stop(), which hides the HUD and drops the words).
+        activeEngine?.stop()
+        utteranceToken &+= 1
+        let token = utteranceToken
+
+        currentText = fullText
+        currentWords = fullWords
+        wordIndexOffset = wordIndex
+
+        // Jump the highlight to the tapped word now so the view scrolls and the
+        // sentence band lands immediately; `onWord` keeps it moving from there.
+        hud.highlight(index: wordIndex)
+        state = .preparing
+
+        let selectedKind = settings.engineKind
+        if selectedKind == .azure, (settings.loadAzureKey()?.isEmpty ?? true) {
+            presentError(.missingCredential(.azure), from: .azure)
+            fallBackToSystem(text: subText, token: token)
+            return
+        }
+        startEngine(for: selectedKind, text: subText, token: token)
+    }
+
     /// Stop immediately: halt the active engine, drop the in-flight utterance,
     /// hide the HUD, and return to `.idle`. Safe to call when already idle.
     func stop() {
+        // Remember how far a long document got before we tear it down.
+        saveProgress()
         // Supersede so any pending engine callbacks are ignored.
         utteranceToken &+= 1
         activeEngine?.stop()
         activeEngine = nil          // release the strong hold; engine stays in cache
         currentWords = []
         currentText = ""
+        wordIndexOffset = 0
+        furthestIndex = 0
         state = .idle
         hud.hide()
     }
@@ -445,10 +538,12 @@ final class TTSEngineManager {
     /// pushed through `state`; then settles `state` to `.idle` so the menu shows
     /// "ready" without firing a spurious second HUD hide.
     private func windDown() {
-        // Drop the in-flight references; keep `currentText` so togglePlayPause
-        // can re-read after a finish if the user hits play again.
+        // Finished cleanly — forget this document's resume position so a re-open
+        // starts fresh. Keep `currentText` so togglePlayPause can re-read on play.
+        if !currentText.isEmpty { ReadingPositionStore.clear(for: currentText) }
         currentWords = []
         activeEngine = nil
+        furthestIndex = 0
         // Settle to idle for the menu (HUD already reflected `.finished`).
         state = .idle
     }

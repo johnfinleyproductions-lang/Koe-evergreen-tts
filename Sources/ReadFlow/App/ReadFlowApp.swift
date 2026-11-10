@@ -18,6 +18,15 @@ import AppKit
 enum ReadFlowMain {
     static func main() {
         let app = NSApplication.shared
+        // This AppKit entry point does not get SwiftUI's standard app menu.
+        // Give windowed Koe a normal Cmd-Q so book position is saved on exit.
+        let menu = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Koe")
+        let quit = NSMenuItem(title: "Quit Koe", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = app
+        appMenu.addItem(quit); appItem.submenu = appMenu; menu.addItem(appItem)
+        app.mainMenu = menu
         // Retain the delegate for the lifetime of the process.
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -46,6 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Real windowed app (Dock icon + window).
         NSApp.setActivationPolicy(.regular)
 
+        // Register any bundled reading faces (e.g. OpenDyslexic) so the fontName
+        // preference resolves without a system install. No-op if none are bundled.
+        KoeFont.registerBundledFonts()
+
+        // Phase 2: share Boards, Canvas, Library, highlights and positions through Core.
+        KoeStateSync.shared.start()
+
         // Build the object graph (order matters: HUD before manager).
         settings = Settings.shared
         hud = ReaderHUDWindow(settings: settings)
@@ -54,7 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey = HotKeyManager()
 
         // Show the Koe window on launch.
+        if CommandLine.arguments.contains("--books") { hud.model.koeView = .books }
         hud.showWindow()
+
+        // A staged viewer rehearsal should not compete for the installed app's
+        // hotkey, loopback listener, accessibility chip or model prewarming.
+        if CommandLine.arguments.contains("--book-preview") { return }
 
         // Reflect engine state in the menu-bar icon. Manager invokes this on the
         // main thread (it is @MainActor). [weak self] avoids a retain cycle
@@ -120,6 +141,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task { await KoeStateSync.shared.pullAll() }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         NotificationCenter.default.removeObserver(self)
         hotKey?.unregister()
@@ -158,11 +183,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.togglePlayPause()
     }
 
-    /// Text pushed in from the browser extension via the local listener.
+    /// Text pushed in from the browser extension via the local listener. Routed
+    /// through `readDocument` so a whole-article capture resumes where you left
+    /// off; a short selection just reads from the top.
     @objc private func handleReadExternal(_ note: Notification) {
         guard let text = note.object as? String,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        manager.read(text)
+        manager.readDocument(text)
     }
 
     // MARK: - Selection capture

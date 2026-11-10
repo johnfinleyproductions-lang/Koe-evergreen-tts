@@ -80,7 +80,8 @@ final class KoeLocalServer: @unchecked Sendable {
                 self.send(conn, status: "413 Payload Too Large"); return
             }
             if let parsed = Self.parse(buf), parsed.complete {
-                self.handle(conn, method: parsed.method, path: parsed.path, body: parsed.body)
+                self.handle(conn, method: parsed.method, path: parsed.path,
+                            origin: parsed.origin, body: parsed.body)
                 return
             }
             if isComplete || error != nil { conn.cancel(); return }
@@ -88,11 +89,21 @@ final class KoeLocalServer: @unchecked Sendable {
         }
     }
 
-    private func handle(_ conn: NWConnection, method: String, path: String, body: Data) {
-        if method == "OPTIONS" {                       // CORS preflight
+    private func handle(_ conn: NWConnection, method: String, path: String, origin: String?, body: Data) {
+        if method == "OPTIONS" {                       // CORS preflight (now denied)
             send(conn, status: "204 No Content"); return
         }
         if method == "POST", path.hasPrefix("/read") {
+            // CSRF guard: a visited web page's cross-origin POST always carries an
+            // http(s):// Origin that the browser sets and the page cannot forge, so
+            // reject those. A browser extension's service-worker POST carries a
+            // chrome-extension:// (or moz-/safari-web-extension://) Origin — that is
+            // our legitimate caller — and non-browser clients (native code) send
+            // none. So allow extension-scheme origins and no Origin; reject the rest.
+            // This blocks page-driven CSRF without blocking the extension.
+            if let origin, !Self.isExtensionOrigin(origin) {
+                send(conn, status: "403 Forbidden", payload: "forbidden"); return
+            }
             if let text = String(data: body, encoding: .utf8),
                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 NSLog("KOE: local listener received read (len=%d)", text.count)
@@ -108,13 +119,21 @@ final class KoeLocalServer: @unchecked Sendable {
         send(conn, status: "404 Not Found", payload: "not found")
     }
 
+    /// A browser extension's service-worker fetch carries an extension-scheme
+    /// Origin (chrome-extension://<id>, moz-extension://, safari-web-extension://)
+    /// that a web page cannot spoof — the browser sets Origin itself, and pages
+    /// only ever send http(s)://. So only extension-scheme origins are trusted.
+    private static func isExtensionOrigin(_ origin: String) -> Bool {
+        let o = origin.lowercased()
+        return o.hasPrefix("chrome-extension://")
+            || o.hasPrefix("moz-extension://")
+            || o.hasPrefix("safari-web-extension://")
+    }
+
     // MARK: - Response
 
     private func send(_ conn: NWConnection, status: String, contentType: String? = nil, payload: String = "") {
         var headers = "HTTP/1.1 \(status)\r\n"
-        headers += "Access-Control-Allow-Origin: *\r\n"
-        headers += "Access-Control-Allow-Methods: POST, OPTIONS\r\n"
-        headers += "Access-Control-Allow-Headers: Content-Type\r\n"
         if let contentType { headers += "Content-Type: \(contentType)\r\n" }
         headers += "Content-Length: \(payload.utf8.count)\r\n"
         headers += "Connection: close\r\n\r\n"
@@ -124,7 +143,7 @@ final class KoeLocalServer: @unchecked Sendable {
 
     // MARK: - Minimal HTTP request parsing
 
-    private struct Parsed { let method: String; let path: String; let body: Data; let complete: Bool }
+    private struct Parsed { let method: String; let path: String; let origin: String?; let body: Data; let complete: Bool }
 
     /// Parse a (possibly partial) HTTP/1.1 request. Returns nil until the header
     /// block is present; once headers are in, reports completeness by Content-Length.
@@ -141,16 +160,26 @@ final class KoeLocalServer: @unchecked Sendable {
         let method = String(parts[0]), path = String(parts[1])
 
         var contentLength = 0
+        var origin: String? = nil
         for line in lines.dropFirst() {
             let kv = line.split(separator: ":", maxSplits: 1)
-            if kv.count == 2, kv[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
-                contentLength = Int(kv[1].trimmingCharacters(in: .whitespaces)) ?? 0
+            guard kv.count == 2 else { continue }
+            let key = kv[0].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = kv[1].trimmingCharacters(in: .whitespaces)
+            switch key {
+            case "content-length":
+                // Clamp: a negative Content-Length would trap `prefix(_:)` below.
+                contentLength = max(0, Int(value) ?? 0)
+            case "origin":
+                origin = value
+            default:
+                break
             }
         }
 
         let bodyAll = data.subdata(in: headerEnd.upperBound..<data.endIndex)
         let complete = bodyAll.count >= contentLength
         let body = complete ? Data(bodyAll.prefix(contentLength)) : bodyAll
-        return Parsed(method: method, path: path, body: body, complete: complete)
+        return Parsed(method: method, path: path, origin: origin, body: body, complete: complete)
     }
 }

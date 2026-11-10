@@ -23,6 +23,7 @@
 
 import Foundation
 import AVFoundation
+import CryptoKit
 
 final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked Sendable {
 
@@ -32,6 +33,10 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     private let baseURL: URL
     private let voice: String
     private let session: URLSession
+    private let bookCache: URL?
+    private let stopOnFailure: Bool
+    private var startingWord: Int?
+    private var failureDetails: [Int: String] = [:]
 
     // MARK: Chunking
     private struct Chunk { let text: String; let words: [Word] }
@@ -70,10 +75,13 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     private static let timerInterval: TimeInterval = 0.02
 
     // MARK: Init
-    init(baseURL: URL, voice: String) {
+    init(baseURL: URL, voice: String, bookCache: URL? = nil, stopOnFailure: Bool = false,
+         sessionConfiguration: URLSessionConfiguration? = nil) {
         self.baseURL = baseURL
         self.voice = voice
-        let config = URLSessionConfiguration.ephemeral
+        self.bookCache = bookCache
+        self.stopOnFailure = stopOnFailure
+        let config = sessionConfiguration ?? URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 120
         config.timeoutIntervalForResource = 240
         config.waitsForConnectivity = false
@@ -113,6 +121,17 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
                onStateChange: @escaping (TTSPlaybackState) -> Void,
                onFinish: @escaping () -> Void,
                onError: @escaping (TTSError) -> Void) {
+        speakFromWord(text: text, startingAt: 0, rate: rate, onWord: onWord,
+                      onStateChange: onStateChange, onFinish: onFinish, onError: onError)
+    }
+
+    /// Books resume inside stable whole-chapter chunks, so their cached audio
+    /// remains reusable after a pause or seek. Word callbacks stay global.
+    func speakFromWord(text: String, startingAt word: Int, rate: Double,
+                       onWord: @escaping (Int) -> Void,
+                       onStateChange: @escaping (TTSPlaybackState) -> Void,
+                       onFinish: @escaping () -> Void,
+                       onError: @escaping (TTSError) -> Void) {
 
         stop()  // supersede anything in flight (bumps generation)
 
@@ -127,11 +146,12 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
         chunks = Self.makeChunks(text: text, words: words)
         guard !chunks.isEmpty else { deliverError(.emptyText); return }
-        failed = []; retries = [:]
+        failed = []; retries = [:]; failureDetails = [:]
         KoeLog.d("kokoro: speak — \(chunks.count) chunks")
 
         let gen = generation
-        playIndex = 0
+        startingWord = min(words.count - 1, max(0, word))
+        playIndex = chunks.firstIndex { ($0.words.last?.index ?? -1) >= startingWord! } ?? 0
         startedSpeaking = false
         deliverState(.preparing)
         pump(gen: gen)   // begin feeding the server, in order, a couple at a time
@@ -171,6 +191,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         failed = []
         retries = [:]
         playIndex = 0
+        startingWord = nil; failureDetails = [:]
         startedSpeaking = false
 
         player?.delegate = nil
@@ -188,6 +209,14 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     private func request(_ i: Int, gen: Int) {
         guard i >= 0, i < chunks.count else { return }
         guard inFlight[i] == nil, ready[i] == nil else { return }   // no dup work
+
+        if let url = cacheURL(i),
+           let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size <= 32 * 1024 * 1024, let cached = try? Data(contentsOf: url) {
+            handleChunkResponse(i, data: cached, httpStatus: 200, hasResponse: true,
+                                errorInfo: nil, words: chunks[i].words, gen: gen)
+            return
+        }
 
         guard let body = makeRequestBody(text: chunks[i].text) else {
             deliverError(.other("Couldn't encode the Kokoro request.")); return
@@ -224,19 +253,24 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         }
         guard hasResponse, let status = httpStatus else { failChunk(i, gen: gen, detail: "no response"); return }
         guard (200...299).contains(status) else { failChunk(i, gen: gen, detail: "HTTP \(status)"); return }
-        guard let data, !data.isEmpty else { failChunk(i, gen: gen, detail: "empty body"); return }
+        guard let data, !data.isEmpty, data.count <= 32 * 1024 * 1024 else { failChunk(i, gen: gen, detail: "empty or oversized response"); return }
 
         let decoded: DecodedPayload
         do { decoded = try parsePayload(data) }
         catch { failChunk(i, gen: gen, detail: "bad payload"); return }
 
-        guard let audioData = Data(base64Encoded: decoded.audioBase64) else {
+        guard let audioData = Data(base64Encoded: decoded.audioBase64), audioData.count <= 16 * 1024 * 1024 else {
             failChunk(i, gen: gen, detail: "bad base64 audio"); return
         }
         let aligned = alignTimestamps(decoded.words, to: words)
+        if stopOnFailure && aligned.isEmpty { failChunk(i, gen: gen, detail: "missing word timing"); return }
         // Stage + pre-load the player NOW so the eventual handoff is instant.
         guard let prepared = prepare(audio: audioData, timestamps: aligned) else {
             failChunk(i, gen: gen, detail: "prepare failed"); return
+        }
+        if let url = cacheURL(i) {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try? data.write(to: url, options: .atomic)
         }
         ready[i] = prepared
         KoeLog.d("kokoro: chunk \(i) READY (ts=\(aligned.count)) playIndex=\(playIndex) player=\(player != nil)")
@@ -264,6 +298,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     /// permanently failed and skip past it (only the rest of the article matters).
     private func failChunk(_ i: Int, gen: Int, detail: String) {
         guard gen == generation else { return }
+        if let url = cacheURL(i) { try? FileManager.default.removeItem(at: url) }
         let attempts = retries[i] ?? 0
         if attempts < Self.maxRetries {
             retries[i] = attempts + 1
@@ -273,6 +308,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         }
         KoeLog.d("kokoro: chunk \(i) PERMANENTLY failed (\(detail)) — skipping")
         failed.insert(i)
+        failureDetails[i] = detail
         inFlight[i] = nil
         if i == playIndex && player == nil { playOrAdvance(gen: gen) }
         pump(gen: gen)
@@ -284,7 +320,13 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         guard gen == generation, player == nil else { return }
         while playIndex < chunks.count {
             if ready[playIndex] != nil { beginPlay(playIndex, gen: gen); return }
-            if failed.contains(playIndex) { KoeLog.d("kokoro: skip failed chunk \(playIndex)"); playIndex += 1; continue }
+            if failed.contains(playIndex) {
+                if stopOnFailure {
+                    deliverError(.engineUnavailable(.kokoro, underlying: failureDetails[playIndex] ?? "This passage could not be read. Retry to continue.")); return
+                }
+                KoeLog.d("kokoro: skip failed chunk \(playIndex)"); playIndex += 1; continue
+            }
+            if stopOnFailure { deliverState(.preparing) }
             request(playIndex, gen: gen)   // not ready — fetch; we'll be called again on arrival
             return
         }
@@ -300,8 +342,13 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         ready[i] = nil
 
         let p = r.player
+        let firstWord = startingWord ?? r.timestamps.first?.wordIndex ?? 0
         p.delegate = self
         p.rate = Float(min(max(currentRate, 0.5), 2.0))
+        if let word = startingWord {
+            p.currentTime = min(p.duration, r.timestamps.first(where: { $0.wordIndex >= word })?.start ?? 0)
+            startingWord = nil
+        }
         guard p.play() else {   // already prepared — this starts with no decode gap
             try? FileManager.default.removeItem(at: r.url)
             skipCurrentChunk(gen: gen, detail: "play refused"); return
@@ -311,8 +358,10 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         tempAudioURL = r.url
         timestamps = r.timestamps
         nextTimestamp = 0
+        while nextTimestamp < timestamps.count,
+              timestamps[nextTimestamp].wordIndex < firstWord || timestamps[nextTimestamp].end < p.currentTime { nextTimestamp += 1 }
 
-        if !startedSpeaking { deliverState(.speaking); startedSpeaking = true }
+        if !startedSpeaking || stopOnFailure { deliverState(.speaking); startedSpeaking = true }
         startWordTimer()
         KoeLog.d("kokoro: PLAY chunk \(i) (dur=\(String(format: "%.1f", p.duration))s)")
 
@@ -341,6 +390,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         let playerID = ObjectIdentifier(player)
         DispatchQueue.main.async { [weak self] in
             guard let self, let current = self.player, ObjectIdentifier(current) == playerID else { return }
+            if !flag && self.stopOnFailure { self.deliverError(.audioPlaybackFailed(detail: "Kokoro playback stopped unexpectedly.")); return }
             // Whether it ended cleanly or not, move on to the next chunk rather
             // than aborting the whole read.
             self.advanceToNextChunk()
@@ -377,6 +427,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
     /// audio decoded fine on the server; re-fetching won't help a local issue).
     private func skipCurrentChunk(gen: Int, detail: String) {
         guard gen == generation else { return }
+        if stopOnFailure { deliverError(.audioPlaybackFailed(detail: detail)); return }
         KoeLog.d("kokoro: skip chunk \(playIndex) at playback (\(detail))")
         failed.insert(playIndex)
         if let r = ready[playIndex] { r.player.stop(); try? FileManager.default.removeItem(at: r.url); ready[playIndex] = nil }
@@ -448,7 +499,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
         for w in words {
             current.append(w)
             let endsSentence = w.text.last.map { ".!?".contains($0) } ?? false
-            if endsSentence, current.count >= target(chunks.count) {
+            if (endsSentence && current.count >= target(chunks.count)) || current.count >= target(chunks.count) * 2 {
                 chunks.append(makeChunk(current, in: text)); current = []
             }
         }
@@ -466,6 +517,13 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
 
     private func captionedSpeechEndpoint() -> URL {
         baseURL.appendingPathComponent("dev").appendingPathComponent("captioned_speech")
+    }
+
+    private func cacheURL(_ index: Int) -> URL? {
+        guard let bookCache, chunks.indices.contains(index) else { return nil }
+        let identity = "kokoro-book-chunks/1\u{0}" + baseURL.absoluteString + "\u{0}" + voice + "\u{0}" + chunks[index].text
+        let key = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+        return bookCache.appendingPathComponent(key + ".json")
     }
 
     private func makeRequestBody(text: String) -> Data? {
@@ -493,7 +551,7 @@ final class KokoroEngine: NSObject, TTSEngine, AVAudioPlayerDelegate, @unchecked
             let text = (entry["word"] as? String) ?? (entry["text"] as? String) ?? (entry["token"] as? String) ?? ""
             let start = doubleValue(entry["start_time"]) ?? doubleValue(entry["start"]) ?? doubleValue(entry["startTime"])
             let end = doubleValue(entry["end_time"]) ?? doubleValue(entry["end"]) ?? doubleValue(entry["endTime"])
-            guard let start else { return nil }
+            guard let start, start.isFinite, start >= 0, (end ?? start).isFinite else { return nil }
             return ServerWord(text: text, start: start, end: end ?? start)
         }
         return DecodedPayload(audioBase64: audioBase64, words: words)

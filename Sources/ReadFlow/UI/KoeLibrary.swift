@@ -43,13 +43,13 @@ final class LibraryStore: ObservableObject {
     private let defaults = UserDefaults.standard
     private let accents: [UInt32] = [0xC0432D, 0x7C8A5B, 0xCF9B4A, 0x33455F, 0x8A5A9E, 0x3E7C8A]
 
-    static var imagesDir: URL {
+    nonisolated static var imagesDir: URL {
         let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Koe/images", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
-    static func imageURL(_ name: String) -> URL { imagesDir.appendingPathComponent(name) }
+    nonisolated static func imageURL(_ name: String) -> URL { imagesDir.appendingPathComponent(name) }
 
     init() {
         load()
@@ -66,6 +66,8 @@ final class LibraryStore: ObservableObject {
     func save() {
         if let d = try? JSONEncoder().encode(notebooks) { defaults.set(d, forKey: notebooksKey) }
         if let d = try? JSONEncoder().encode(pulled) { defaults.set(d, forKey: pulledKey) }
+        NotificationCenter.default.post(name: .koeStateChanged, object: notebooksKey)
+        NotificationCenter.default.post(name: .koeStateChanged, object: pulledKey)
     }
     private func migrateOrSeed() {
         if let d = defaults.data(forKey: legacyKey), let old = try? JSONDecoder().decode([LegacySection].self, from: d), !old.isEmpty {

@@ -1,5 +1,59 @@
 # ReadFlow
 
+## Books in the native Koe app
+
+Open **Books** in Koe's sidebar. This is the original-PDF reading view; the
+existing **Library** remains your notebook workspace. Choose a book, then a
+chapter. Use Previous/Next page, a page number, Fit/zoom and the chapter player.
+Koe saves the chapter, PDF page, listening time, zoom and speed when you pause or
+leave. Ready adjacent chapters continue in order; unavailable audio is never
+silently regenerated.
+
+Select text on a PDF page and choose **Highlight text**. Choose yellow, green,
+pink or blue from **Color**. For scanned pages or pictures, turn on **Mark area**
+and drag over the passage; turn it off to select text again. **Highlights** lists
+saved marks, takes you back to their page, and offers Remove. Highlights save
+immediately in each book's private `highlights.json`, matched to the source PDF's
+hash, and return when the book reopens. The original PDF and narration stay
+unchanged. These book highlights are local to this Mac.
+
+The chapter player's **Voice** picker offers **Audiobook Narrator** (the existing
+recording) and **Kokoro** (Koe's configured Kokoro voice and server). Kokoro reads
+the imported text immediately, including chapters awaiting a narrator recording.
+It generates small passages as needed and keeps them in the book's private
+`kokoro-cache`, separately from original MP3s. Already cached passages replay
+offline; new passages need the configured Kokoro service. Failures stop visibly
+at the unavailable passage rather than skipping book text or changing voices.
+
+Kokoro's progress slider seeks by **word**, with **Back 20 words**; the narrator
+slider seeks by time, with Back 15 seconds. Saved places retain the selected
+engine and Kokoro word position. Switching voices maps the position through the
+source text, because their spoken timings differ. Kokoro follows PDF pages using
+its own spoken-word callbacks and the prepared page mapping. The voice name is
+shown in the picker; changing Koe's Kokoro settings applies on the next play.
+
+**Follow pages** advances the PDF using the recorded chapter's existing word
+timings and prepared page-text mapping. Manual page navigation turns following
+off until you re-enable it. Timings are approximate; uncertain mappings remain
+manual. Original images and layout stay intact.
+
+Prepared `.koebook` folders contain the unchanged source PDF, versioned chapter
+metadata/page spans and existing MP3s. Imported copies live under
+`~/Library/Application Support/Koe/Books`, separate from notebooks and
+highlights, and remain usable offline. **Connect Evergreen** opens Koe's own
+sign-in window. Sign in with your normal Evergreen account, then use **Refresh
+chapters**; Koe also checks for finished chapters every minute while Books is
+open. It never extracts another browser's cookies or includes internal-worker
+credentials. Imports do not rerun OCR or TTS.
+
+Developer builds use `bash scripts/build_app.sh --build-only`; this assembles and
+signs the staged app without replacing `/Applications/Koe.app`. After validation,
+quit Koe and use `--install` to retain the previous app and install the new one.
+`./script/build_and_run.sh` runs a staged viewer rehearsal without competing for
+the installed hotkey/loopback listener. The standalone Swift smoke check and
+`python3 scripts/test_book_page_map.py` verify real-source playback/position
+restore and UTF-16 page offsets without adding a test framework.
+
 ReadFlow reads text out loud for you.
 
 Pick some text anywhere on your Mac. Press a key. ReadFlow speaks it. Each word
@@ -95,6 +149,19 @@ easy on your eyes:
 - **Speed** — read slower or faster.
 
 Change these until reading feels comfortable. There is no wrong setting.
+
+## Highlight and export a reading
+
+1. Open **Capture & highlight** in Koe. From **The Quiet Hour**, click
+   **Highlight & export** to get there.
+2. Drag across any passage, then choose **Yellow**, **Green**, **Pink**, or
+   **Blue**. Koe remembers those highlights when you reopen the same text.
+3. Click **Export PDF + editable RTF** and choose a filename.
+
+Koe saves two files beside each other:
+
+- a clean, paginated PDF for reading or sharing
+- an RTF with the same highlights that you can edit in Pages, Word, or TextEdit
 
 ## If something does not work
 
